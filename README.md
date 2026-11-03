@@ -1,8 +1,11 @@
-# awg-tg-bot
+# deeptraversal
 
-Телеграм-бот, который сам выдаёт ключи **AmneziaWG** (протокол AmneziaVPN) на вашем
-собственном сервере. Никакого панельного API, никакой внешней инфраструктуры: бот живёт
-на том же сервере, где крутится AmneziaWG, и правит его конфиг.
+**Self-service key provisioning для AmneziaWG.** Выдача ключей, IP-пул, отзыв доступа —
+на вашем собственном сервере. Телеграм-бот здесь просто один из фронтендов (CLI уже есть,
+HTTP API — в roadmap), вся логика живёт рядом с VPN и правит его конфиг напрямую.
+
+No panel API, no third-party infrastructure: works on the same box as AmneziaWG, native
+install or inside Amnezia's Docker container.
 
 Вместо «зайди по SSH → `awg genkey` → придумай IP → допиши peer → собери .conf → скинь
 файлом» клиент жмёт кнопку в Телеграме и получает готовый `.conf`, который импортируется в
@@ -48,7 +51,7 @@
 ## Быстрый старт (без риска, mock-режим)
 
 ```bash
-git clone <this repo> awg-tg-bot && cd awg-tg-bot
+git clone <this repo> deeptraversal && cd deeptraversal
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env          # вписать BOT_TOKEN, ADMIN_IDS, ENDPOINT_HOST
 sed -i 's/^BACKEND=.*/BACKEND=mock/' .env
@@ -68,9 +71,9 @@ peer'ов в `mock_awg_state.json`. Удобно посмотреть, как в
 ## Установка на сервер
 
 ```bash
-sudo ./deploy/install.sh                 # код в /opt/awg-tg-bot, venv, systemd-юнит
-sudo nano /opt/awg-tg-bot/.env           # BOT_TOKEN, ADMIN_IDS, ENDPOINT_HOST, AWG_CONF
-sudo /opt/awg-tg-bot/.venv/bin/python -m awgbot --env /opt/awg-tg-bot/.env --check
+sudo ./deploy/install.sh                 # код в /opt/deeptraversal, venv, systemd-юнит
+sudo nano /opt/deeptraversal/.env           # BOT_TOKEN, ADMIN_IDS, ENDPOINT_HOST, AWG_CONF
+sudo /opt/deeptraversal/.venv/bin/python -m awgbot --env /opt/deeptraversal/.env --check
 sudo systemctl enable --now awgbot
 sudo journalctl -u awgbot -f
 ```

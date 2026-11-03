@@ -3,9 +3,9 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "awg-tg-bot"
+name = "deeptraversal"
 version = "0.1.0"
-description = "Telegram bot that issues AmneziaWG (AmneziaVPN) keys on your own server"
+description = "Self-service key provisioning for AmneziaWG: peers, IP pool, revoke, Telegram bot and CLI"
 readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT" }
@@ -15,7 +15,7 @@ dependencies = ["requests>=2.28"]
 dev = ["pytest>=7"]
 
 [project.scripts]
-awgbot = "awgbot.__main__:main"
+awgbot = "awgbot.__main__:main"      # the import package stays `awgbot`
 
 [tool.setuptools.packages.find]
 include = ["awgbot*"]

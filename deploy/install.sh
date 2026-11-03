@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Install awg-tg-bot on the AmneziaWG server itself.
-#   sudo DEST=/opt/awg-tg-bot ./deploy/install.sh
+# Install deeptraversal on the AmneziaWG server itself.
+#   sudo DEST=/opt/deeptraversal ./deploy/install.sh
 set -euo pipefail
 
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
-DEST="${DEST:-/opt/awg-tg-bot}"
+DEST="${DEST:-/opt/deeptraversal}"
 PYTHON="${PYTHON:-python3}"
 
 if [ "$(id -u)" -ne 0 ]; then

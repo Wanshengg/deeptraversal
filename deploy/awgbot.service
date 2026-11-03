@@ -5,9 +5,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/awg-tg-bot
+WorkingDirectory=/opt/deeptraversal
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/opt/awg-tg-bot/.venv/bin/python -m awgbot --env /opt/awg-tg-bot/.env
+ExecStart=/opt/deeptraversal/.venv/bin/python -m awgbot --env /opt/deeptraversal/.env
 Restart=always
 RestartSec=5
 # `awg syncconf` needs CAP_NET_ADMIN and the config under /etc — kept simple on purpose,
