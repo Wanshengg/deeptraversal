@@ -30,7 +30,8 @@ TEXT_ADMIN_HELP = (
     "/approve <id> — выдать доступ\n"
     "/reject <id> — отказать\n"
     "/ban <tg_id> · /unban <tg_id>\n"
-    "/revoke <tg_id> — отозвать ключ пользователя"
+    "/revoke <tg_id> — отозвать ключ пользователя\n"
+    "/prune — подчистить ключи, удалённые мимо бота (например в приложении)"
 )
 
 
@@ -164,6 +165,18 @@ class Bot(object):
             self._reply(chat_id, "Ключ отозван. Выдать новый — /start.")
         else:
             self._reply(chat_id, "Активных ключей нет.")
+
+    def _cmd_prune(self, chat_id, tg_id, args):
+        if not self.is_admin(tg_id):
+            self._reply(chat_id, "Команда только для админа.")
+            return
+        force = "force" in args.split()
+        try:
+            result = self.prov.prune(actor=tg_id, force=force)
+        except ProvisionError as exc:
+            self._reply(chat_id, "Prune не выполнен: %s" % esc(exc))
+            return
+        self._reply(chat_id, "<b>Prune</b>\n%s" % esc(result.summary()))
 
     def _cmd_status(self, chat_id, tg_id, args):
         if not self.is_admin(tg_id):

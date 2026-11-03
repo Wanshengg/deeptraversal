@@ -11,7 +11,7 @@ from . import config as config_mod
 from .awg import BackendError, Mock, make_backend
 from .bot import Bot
 from .config import ConfigError
-from .provision import Provisioner
+from .provision import Provisioner, ProvisionError
 from .store import Store
 from .telegram import Telegram, TelegramError
 
@@ -101,6 +101,18 @@ def cmd_export(cfg, tg_id, link_only=False):
     return 0
 
 
+def cmd_prune(cfg, force=False):
+    """Drop db peers that no longer exist on the live interface (deleted in the app)."""
+    store, backend, prov = build(cfg)
+    try:
+        result = prov.prune(actor="cli", force=force)
+    except ProvisionError as exc:
+        print("prune aborted: %s" % exc)
+        return 1
+    print(result.summary())
+    return 0
+
+
 def cmd_sync_clients(cfg):
     """Backfill Amnezia's clientsTable from the bot's database (one-off migration)."""
     store, backend, _ = build(cfg)
@@ -164,6 +176,10 @@ def main(argv=None):
                         help="with --export: print only the vpn:// link")
     parser.add_argument("--sync-clients-table", action="store_true",
                         help="add all db peers to Amnezia's clientsTable (app Users list)")
+    parser.add_argument("--prune", action="store_true",
+                        help="revoke db peers that are gone from the live interface")
+    parser.add_argument("--force", action="store_true",
+                        help="with --prune: proceed even if the interface reports no peers")
     args = parser.parse_args(argv)
 
     cfg = config_mod.load(args.env)
@@ -184,6 +200,8 @@ def main(argv=None):
             return cmd_export(cfg, args.export, link_only=args.link)
         if args.sync_clients_table:
             return cmd_sync_clients(cfg)
+        if args.prune:
+            return cmd_prune(cfg, force=args.force)
         cfg.validate()
         run_bot(cfg)
         return 0

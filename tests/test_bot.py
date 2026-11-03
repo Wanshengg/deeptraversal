@@ -208,3 +208,28 @@ def test_file_can_be_switched_off(cfg, bot, tg):
     approve_flow(bot, tg)
     assert len(_extract_link(tg.texts_for(100))) == 1
     assert tg.documents == []
+
+
+def test_admin_prune_reports_and_cleans(bot, tg, store, backend):
+    from tests.conftest import message
+    approve_flow(bot, tg)
+    backend._state["peers"] = []                    # user deleted the key in the app
+    bot.handle(message(42, "/prune force"))
+    text = tg.last_text_for(42)
+    assert "проверено пиров в базе" in text
+    assert store.active_peers(100) == []
+
+
+def test_prune_is_admin_only(bot, tg, store):
+    from tests.conftest import message
+    bot.handle(message(100, "/prune"))
+    assert "админа" in tg.last_text_for(100)
+
+
+def test_prune_refusal_is_reported_to_admin(bot, tg, store, backend):
+    from tests.conftest import message
+    approve_flow(bot, tg)
+    backend._state["peers"] = []
+    bot.handle(message(42, "/prune"))
+    assert "не выполнен" in tg.last_text_for(42)    # safety check tells the admin why
+    assert len(store.active_peers(100)) == 1

@@ -141,6 +141,60 @@ def test_issue_survives_a_broken_client_table(prov, backend):
     assert result.peer.ip == "10.8.0.2"                # issuance must not fail
 
 
+# --- prune: peers deleted outside the bot (e.g. in the AmneziaVPN app) ----------------
+def test_prune_drops_peer_removed_from_the_interface(prov, store, backend):
+    peer, _, _ = prov.issue(100, "iphone")
+    backend._state["peers"] = []                     # deleted in the app / by hand
+    result = prov.prune(force=True)                  # all peers gone → needs force
+    assert [p.id for p in result.removed] == [peer.id]
+    assert store.active_peers(100) == []
+    assert backend.live_peers() == []                # managed block cleaned by sync
+    assert backend.clients_in_app() == set()         # gone from the app's Users list too
+    actions = [r[0] for r in store.conn.execute("SELECT action FROM audit ORDER BY rowid")]
+    assert actions == ["issue", "prune"]
+
+
+def test_prune_keeps_healthy_peers(prov, store, backend):
+    prov.issue(100, "iphone")
+    result = prov.prune()
+    assert result.removed == []
+    assert len(store.active_peers(100)) == 1
+
+
+def test_prune_reports_hand_made_peers_without_touching_them(prov, store, backend):
+    prov.issue(100, "iphone")
+    backend._state["peers"].append({"public_key": "MANUAL=", "preshared_key": "",
+                                    "ip": "10.8.0.9", "tg_id": 0})
+    result = prov.prune()
+    assert result.removed == []
+    assert result.unknown_live == ["MANUAL="]
+
+
+def test_prune_refuses_when_interface_looks_down(prov, store, backend):
+    from awgbot.provision import ProvisionError
+    prov.issue(100, "iphone")
+    backend._state["peers"] = []
+    with pytest.raises(ProvisionError) as exc:
+        prov.prune(force=False)
+    assert "--force" in str(exc.value)
+    assert len(store.active_peers(100)) == 1         # nothing was revoked
+
+
+def test_prune_force_works_when_interface_really_is_empty(prov, store, backend):
+    prov.issue(100, "iphone")
+    backend._state["peers"] = []
+    result = prov.prune(force=True)
+    assert len(result.removed) == 1
+    assert store.active_peers(100) == []
+
+
+def test_prune_summary_is_human_readable(prov, store, backend):
+    peer, _, _ = prov.issue(100, "iphone")
+    backend._state["peers"] = []
+    text = prov.prune(force=True).summary()
+    assert "проверено пиров" in text and "iphone" in text and peer.ip in text
+
+
 @pytest.mark.parametrize("raw,expected", [
     ("iphone", "iphone"),
     ("../../etc/passwd", "etcpasswd"),

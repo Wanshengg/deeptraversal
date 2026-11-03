@@ -13,6 +13,25 @@ class ProvisionError(Exception):
     pass
 
 
+class PruneResult(object):
+    __slots__ = ("removed", "unknown_live", "checked")
+
+    def __init__(self, removed, unknown_live, checked):
+        self.removed = removed          # peers that were in the db but gone from the interface
+        self.unknown_live = unknown_live  # live peers the bot does not know (hand-made)
+        self.checked = checked
+
+    def summary(self):
+        lines = ["проверено пиров в базе: %s" % self.checked,
+                 "удалено (их уже нет на интерфейсе): %s" % len(self.removed)]
+        for peer in self.removed:
+            lines.append("  · %s %s (%s…)" % (peer.device, peer.ip, peer.public_key[:12]))
+        if self.unknown_live:
+            lines.append("живых пиров вне базы (ручные, не трогаю): %s"
+                         % len(self.unknown_live))
+        return "\n".join(lines)
+
+
 def safe_device_name(raw):
     """Keep config file names boring: no path separators, no spaces."""
     cleaned = "".join(ch for ch in raw if ch.isalnum() or ch in "-_.").strip("._-")
@@ -151,3 +170,34 @@ class Provisioner(object):
         if not peers:
             return None
         return self.delivery(peers[0])
+
+    def prune(self, actor=None, force=False):
+        """Drop peers that were removed outside the bot (e.g. deleted in the app).
+
+        Reads the *live* interface, never the config: if `awg` answers with no peers while
+        the db has some, that is almost always a broken interface rather than mass deletion,
+        so it refuses unless `force` is set.
+        """
+        live = set(self.backend.live_peers())
+        active = self.store.active_peers()
+        if not live and active and not force:
+            raise ProvisionError(
+                "интерфейс не отдал ни одного пира, а в базе их %s — похоже, awg недоступен; "
+                "если так и должно быть, повтори с --force" % len(active))
+
+        removed = []
+        for peer in active:
+            if peer.public_key in live:
+                continue
+            self.store.revoke(peer.id)
+            self.store.audit(actor or "cli", "prune",
+                             "tg=%s ip=%s pub=%s" % (peer.tg_id, peer.ip, peer.public_key))
+            log.info("pruned peer %s (%s) of user %s", peer.ip, peer.public_key[:12],
+                     peer.tg_id)
+            self._unregister(peer)
+            removed.append(peer)
+
+        if removed:
+            self.backend.sync(self.store.active_peers())
+        known = {p.public_key for p in self.store.active_peers()}
+        return PruneResult(removed, sorted(live - known), len(active))
