@@ -1,0 +1,16 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.db
+*.db-journal
+.bot.offset
+mock_awg_state.json
+export/
+*.conf
+!deploy/*.conf
+.pytest_cache/
+build/
+dist/
+*.egg-info/

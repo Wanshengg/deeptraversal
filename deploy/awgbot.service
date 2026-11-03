@@ -1,0 +1,22 @@
+[Unit]
+Description=AmneziaWG Telegram key bot
+After=network-online.target awg-quick@awg0.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/awg-tg-bot
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/awg-tg-bot/.venv/bin/python -m awgbot --env /opt/awg-tg-bot/.env
+Restart=always
+RestartSec=5
+# `awg syncconf` needs CAP_NET_ADMIN and the config under /etc — kept simple on purpose,
+# the unit runs as root and the bot itself never opens a network port.
+NoNewPrivileges=no
+PrivateTmp=yes
+ProtectHome=read-only
+ProtectKernelTunables=yes
+RestrictSUIDSGID=yes
+
+[Install]
+WantedBy=multi-user.target
