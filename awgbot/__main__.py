@@ -101,6 +101,13 @@ def cmd_export(cfg, tg_id, link_only=False):
     return 0
 
 
+def cmd_whoami(cfg):
+    """Print the bot's @username — used by setup.sh to tell the user which bot to open."""
+    me = Telegram(cfg.bot_token, api_base=cfg.api_base).get_me()
+    print(me.get("username") or me.get("first_name") or "unknown")
+    return 0
+
+
 def cmd_prune(cfg, force=False):
     """Drop db peers that no longer exist on the live interface (deleted in the app)."""
     store, backend, prov = build(cfg)
@@ -180,6 +187,8 @@ def main(argv=None):
                         help="revoke db peers that are gone from the live interface")
     parser.add_argument("--force", action="store_true",
                         help="with --prune: proceed even if the interface reports no peers")
+    parser.add_argument("--whoami", action="store_true",
+                        help="print the bot username registered for this token")
     args = parser.parse_args(argv)
 
     cfg = config_mod.load(args.env)
@@ -202,6 +211,8 @@ def main(argv=None):
             return cmd_sync_clients(cfg)
         if args.prune:
             return cmd_prune(cfg, force=args.force)
+        if args.whoami:
+            return cmd_whoami(cfg)
         cfg.validate()
         run_bot(cfg)
         return 0

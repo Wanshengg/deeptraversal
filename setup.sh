@@ -189,8 +189,9 @@ if ! systemctl is-active --quiet "$SERVICE"; then
   die "сервис не поднялся"
 fi
 
-USERNAME="$(journalctl -u "$SERVICE" --since '-1 min' --no-pager 2>/dev/null \
-  | sed -n 's/.*connected as @\([A-Za-z0-9_]*\).*/\1/p' | tail -1)"
+USERNAME="$(run_py -m awgbot --env "$DEST/.env" --whoami 2>/dev/null | tail -1 || true)"
+case "$USERNAME" in unknown|"") USERNAME="$(journalctl -u "$SERVICE" --since '-2 min' --no-pager 2>/dev/null \
+  | sed -n 's/.*connected as @\([A-Za-z0-9_]*\).*/\1/p' | tail -1)" ;; esac
 
 BOT_LABEL="см. логи (journalctl)"
 if [ -n "$USERNAME" ]; then BOT_LABEL="@$USERNAME"; fi
