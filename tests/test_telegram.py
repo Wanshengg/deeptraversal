@@ -86,4 +86,4 @@ def test_get_updates_passes_long_poll_timeout():
     assert call["data"]["timeout"] == 50
     assert call["data"]["offset"] == 7
     assert call["timeout"] == 65
-    assert call["data"]["allowed_updates"] == ["message", "callback_query"]
+    assert json.loads(call["data"]["allowed_updates"]) == ["message", "callback_query"]
