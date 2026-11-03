@@ -59,6 +59,7 @@ class FakeTelegram(object):
 def cfg(tmp_path):
     cfg = Config.__new__(Config)
     cfg.bot_token = "123:TEST"
+    cfg.api_base = "https://api.telegram.org"
     cfg.admin_ids = (42,)
     cfg.backend = "mock"
     cfg.iface = "awg0"

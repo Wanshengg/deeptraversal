@@ -103,7 +103,8 @@ def cmd_export(cfg, tg_id, link_only=False):
 
 def cmd_whoami(cfg):
     """Print the bot's @username — used by setup.sh to tell the user which bot to open."""
-    me = Telegram(cfg.bot_token, api_base=cfg.api_base).get_me()
+    api_base = getattr(cfg, "api_base", "https://api.telegram.org")
+    me = Telegram(cfg.bot_token, api_base=api_base).get_me()
     print(me.get("username") or me.get("first_name") or "unknown")
     return 0
 
