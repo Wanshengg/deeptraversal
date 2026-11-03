@@ -67,13 +67,13 @@ def test_link_prefix_base64url_and_padding():
 
 def test_envelope_matches_amnezia_import_contract():
     envelope = vpnlink.decode_vpn_link(vpnlink.build_vpn_link(CONF, description="iphone"))
-    assert envelope["defaultContainer"] == "amnezia-awg"
+    assert envelope["defaultContainer"] == "amnezia-awg2"   # CONF carries S3/S4
     assert envelope["hostName"] == "vpn.example.com"
     assert envelope["description"] == "iphone"
     assert envelope["dns1"] == "1.1.1.1"
     containers = envelope["containers"]
     assert len(containers) == 1
-    assert containers[0]["container"] == "amnezia-awg"
+    assert containers[0]["container"] == "amnezia-awg2"
     awg = containers[0]["awg"]
     assert awg["isThirdPartyConfig"] is True
     assert awg["transport_proto"] == "udp"
@@ -142,3 +142,20 @@ def test_link_size_is_chat_friendly():
     # must stay far below Telegram's 4096-char message limit for a real config
     link = vpnlink.build_vpn_link(CONF)
     assert len(link) < 1500
+
+
+def test_awg2_server_gets_awg2_container():
+    # S3/S4 = AWG 2.0 junk params → Amnezia ships that as amnezia-awg2
+    env = vpnlink.decode_vpn_link(vpnlink.build_vpn_link(CONF))
+    assert env["containers"][0]["container"] == "amnezia-awg2"
+    assert env["defaultContainer"] == "amnezia-awg2"
+
+    legacy = "\n".join(line for line in CONF.splitlines()
+                       if not line.startswith(("S3", "S4")))
+    env2 = vpnlink.decode_vpn_link(vpnlink.build_vpn_link(legacy))
+    assert env2["containers"][0]["container"] == "amnezia-awg"
+
+
+def test_container_name_can_be_overridden():
+    env = vpnlink.decode_vpn_link(vpnlink.build_vpn_link(CONF, container="amnezia-awg"))
+    assert env["containers"][0]["container"] == "amnezia-awg"

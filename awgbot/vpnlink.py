@@ -34,6 +34,7 @@ import struct
 import zlib
 
 AWG_CONTAINER = "amnezia-awg"
+AWG2_CONTAINER = "amnezia-awg2"
 TRANSPORT_PROTO = "udp"
 # AWG params that must survive into last_config verbatim, UI order.
 OBF_KEYS = ("Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4",
@@ -129,11 +130,19 @@ def build_last_config(conf_text, description=""):
     return last, kv, host, port
 
 
-def build_envelope(conf_text, description=""):
+def container_for(kv):
+    """AWG 2.0 servers (S3/S4 cookie+transport junk) live in `amnezia-awg2`."""
+    if kv.get("S3") or kv.get("S4"):
+        return AWG2_CONTAINER
+    return AWG_CONTAINER
+
+
+def build_envelope(conf_text, description="", container=None):
     last, kv, host, port = build_last_config(conf_text)
+    container = container or container_for(kv)
     envelope = {
         "containers": [{
-            "container": AWG_CONTAINER,
+            "container": container,
             "awg": {
                 "last_config": json.dumps(last, separators=(",", ":"), ensure_ascii=True),
                 "isThirdPartyConfig": True,
@@ -141,7 +150,7 @@ def build_envelope(conf_text, description=""):
                 "transport_proto": TRANSPORT_PROTO,
             },
         }],
-        "defaultContainer": AWG_CONTAINER,
+        "defaultContainer": container,
         "hostName": host,
     }
     if description:
@@ -154,8 +163,8 @@ def build_envelope(conf_text, description=""):
     return envelope
 
 
-def build_vpn_link(conf_text, description=""):
-    raw = json.dumps(build_envelope(conf_text, description),
+def build_vpn_link(conf_text, description="", container=None):
+    raw = json.dumps(build_envelope(conf_text, description, container),
                      separators=(",", ":"), ensure_ascii=True).encode("utf-8")
     encoded = base64.urlsafe_b64encode(qcompress(raw)).decode("ascii").rstrip("=")
     return "vpn://" + encoded

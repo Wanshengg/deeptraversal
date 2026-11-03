@@ -95,6 +95,22 @@ def test_audit_log_is_written(prov, store):
     assert [r[0] for r in rows] == ["issue"]
 
 
+def test_allocation_skips_addresses_of_hand_made_peers(prov, store, backend):
+    # a server that already had peers before the bot: .2 and .3 are taken outside the DB
+    backend.seed(existing_ips=["10.8.0.2", "10.8.0.3"])
+    peer, _, _ = prov.issue(100, "iphone")
+    assert peer.ip == "10.8.0.4"
+    assert store.used_ips() == {"10.8.0.4"}
+
+
+def test_allocation_still_recycles_revoked_addresses(prov, store, backend):
+    backend.seed(existing_ips=["10.8.0.2"])
+    first, _, _ = prov.issue(100, "iphone")
+    prov.revoke_all(100)
+    second, _, _ = prov.issue(101, "laptop")
+    assert first.ip == second.ip == "10.8.0.3"
+
+
 @pytest.mark.parametrize("raw,expected", [
     ("iphone", "iphone"),
     ("../../etc/passwd", "etcpasswd"),

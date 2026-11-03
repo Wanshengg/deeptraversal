@@ -6,7 +6,8 @@ import sys
 # Interface-level AmneziaWG obfuscation parameters that must be copied verbatim from the
 # server config into every client config, otherwise the handshake is dropped by the server.
 OBFUSCATION_KEYS = (
-    "Jc", "Jmin", "Jmax", "S1", "S2", "H1", "H2", "H3", "H4",
+    "Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4",
+    "H1", "H2", "H3", "H4",
     "I1", "I2", "I3", "I4", "I5", "J1", "J2", "J3", "Itime",
 )
 
@@ -68,6 +69,11 @@ class Config(object):
         self.iface = _env("AWG_IFACE", "awg0")
         self.server_conf = _env("AWG_CONF", "/etc/amnezia/amneziawg/awg0.conf")
         self.awg_bin = _env("AWG_BIN", "awg")
+        # Amnezia's server side often runs in Docker: then everything (config I/O and
+        # `awg`) goes through `docker exec <container>` and AWG_CONF is a path *inside*
+        # the container, usually /opt/amnezia/awg/awg0.conf.
+        self.awg_docker = _env("AWG_DOCKER", "")
+        self.vpn_link_container = _env("VPN_LINK_CONTAINER", "")   # empty = auto
         self.server_public_key = _env("SERVER_PUBLIC_KEY", "")
         self.endpoint_host = _env("ENDPOINT_HOST", "")
         self.endpoint_port = _env_int("ENDPOINT_PORT", 51820)
@@ -98,10 +104,10 @@ class Config(object):
         if self.backend not in ("awg", "mock"):
             problems.append("BACKEND must be 'awg' or 'mock'")
         if self.backend == "awg":
-            if not os.path.exists(self.server_conf):
+            # In docker mode AWG_CONF is a path inside the container, so it cannot be
+            # checked from here — the transport reports it on first use.
+            if not self.awg_docker and not os.path.exists(self.server_conf):
                 problems.append("AWG_CONF does not exist: %s" % self.server_conf)
-            if not self.server_public_key:
-                problems.append("SERVER_PUBLIC_KEY is empty")
         if problems:
             raise ConfigError("; ".join(problems))
         return self
@@ -110,7 +116,8 @@ class Config(object):
         rows = [
             ("backend", self.backend),
             ("interface", self.iface),
-            ("server conf", self.server_conf),
+            ("server conf", ("%s:%s" % (self.awg_docker, self.server_conf))
+             if self.awg_docker else self.server_conf),
             ("endpoint", "%s:%s" % (self.endpoint_host, self.endpoint_port)),
             ("subnet", "%s (server %s)" % (self.subnet, self.server_ip)),
             ("dns", self.dns),

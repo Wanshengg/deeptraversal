@@ -75,6 +75,29 @@ sudo systemctl enable --now awgbot
 sudo journalctl -u awgbot -f
 ```
 
+### Если Amnezia стоит в Docker
+
+Очень частый случай (и то, что делает установщик AmneziaVPN на VPS): `awg` и конфиг живут
+внутри контейнера `amnezia-awg`/`amnezia-awg2`, на хосте их нет вообще. Тогда:
+
+```bash
+AWG_DOCKER=amnezia-awg2                 # имя контейнера: docker ps
+AWG_CONF=/opt/amnezia/awg/awg0.conf     # путь ВНУТРИ контейнера, не на хосте
+```
+
+Все операции (чтение/запись конфига, `awg syncconf`, `awg show`) идут через
+`docker exec -i <контейнер>`; бот по-прежнему ставится на хост и требует только `docker`.
+Проверить, что режим угадан правильно:
+
+```bash
+docker exec amnezia-awg2 awg show awg0 | head -5
+python -m awgbot --check        # покажет тот же public key и те же obf-параметры
+```
+
+Ограничение: конфиг внутри контейнера не переживает `docker rm` контейнера (переустановка
+Amnezia снесёт и пиров бота). У Amnezia это штатное поведение — держите `export/` и базу
+в бэкапе.
+
 Что нужно в `.env` (полный список — в `.env.example`):
 
 | Переменная | Смысл |
@@ -83,6 +106,7 @@ sudo journalctl -u awgbot -f
 | `TELEGRAM_API_BASE` | по умолчанию `https://api.telegram.org`; менять только для своего Bot API server |
 | `ADMIN_IDS` | ваш Telegram ID (узнать: `/id` в боте), можно несколько через запятую |
 | `AWG_CONF` | путь к серверному конфигу, обычно `/etc/amnezia/amneziawg/awg0.conf` |
+| `AWG_DOCKER` | имя контейнера, если Amnezia стоит в Docker (`amnezia-awg2`); тогда `AWG_CONF` — путь **внутри** контейнера, обычно `/opt/amnezia/awg/awg0.conf` |
 | `AWG_IFACE` | имя интерфейса, `awg0` |
 | `ENDPOINT_HOST` / `ENDPOINT_PORT` | публичный адрес и `ListenPort` сервера |
 | `SUBNET` / `SERVER_IP` | подсеть клиентов и адрес сервера в ней |

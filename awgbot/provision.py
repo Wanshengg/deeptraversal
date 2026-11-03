@@ -77,7 +77,9 @@ class Provisioner(object):
         link = None
         if self.cfg.send_vpn_link:
             try:
-                link = vpnlink.build_vpn_link(conf, description=safe_device_name(peer.device))
+                link = vpnlink.build_vpn_link(
+                    conf, description=safe_device_name(peer.device),
+                    container=getattr(self.cfg, "vpn_link_container", "") or None)
             except vpnlink.VpnLinkError:
                 link = None  # a broken link must never block issuing the .conf
         return Delivery(peer, conf, conf_filename(peer), link)
@@ -90,8 +92,8 @@ class Provisioner(object):
             for peer in active[self.cfg.max_peers_per_user - 1:]:
                 self._revoke(peer, actor or tg_id, reason="reissue")
 
-        ip = ipam.allocate(self.cfg.subnet, self.cfg.server_ip,
-                           self.store.used_ips(), self.cfg.reserved_ips)
+        used = self.store.used_ips() | set(self.backend.existing_ips())
+        ip = ipam.allocate(self.cfg.subnet, self.cfg.server_ip, used, self.cfg.reserved_ips)
         if ip is None:
             raise ProvisionError("IP pool %s is exhausted" % self.cfg.subnet)
 

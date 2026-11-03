@@ -103,3 +103,37 @@ def test_server_public_key_is_derived_from_private_key(cfg):
 def test_resolve_returns_none_without_key(cfg):
     cfg.server_public_key = ""
     assert clientconf.resolve_server_pubkey(cfg, "[Interface]\nJc = 4\n") is None
+
+
+def test_existing_peer_ips_ignores_managed_region_and_multi_allowedips():
+    text = """[Interface]
+PrivateKey = k
+
+[Peer]
+PublicKey = manual1
+AllowedIPs = 10.8.0.9/32, 192.168.50.0/24
+
+[Peer]
+PublicKey = manual2
+AllowedIPs = 10.8.1.0/32
+
+# >>> awgbot managed peers (do not edit by hand)
+[Peer]
+# awgbot
+PublicKey = botpeer
+AllowedIPs = 10.8.0.2/32
+# <<< awgbot managed peers
+"""
+    assert clientconf.existing_peer_ips(text) == {"10.8.0.9", "192.168.50.0", "10.8.1.0"}
+
+
+def test_existing_peer_ips_on_empty_config():
+    assert clientconf.existing_peer_ips("") == set()
+    assert clientconf.existing_peer_ips("[Interface]\nPrivateKey = k\n") == set()
+
+
+def test_s3_s4_are_copied_to_the_client_config():
+    text = SERVER_CONF.format(priv="k").replace(
+        "SaveConfig = false", "SaveConfig = false\nS3 = 43\nS4 = 2")
+    params = dict(clientconf.server_obfuscation(text))
+    assert params["S3"] == "43" and params["S4"] == "2"

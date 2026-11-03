@@ -64,6 +64,8 @@ def cfg(tmp_path):
     cfg.iface = "awg0"
     cfg.server_conf = str(tmp_path / "awg0.conf")
     cfg.awg_bin = "awg"
+    cfg.awg_docker = ""
+    cfg.vpn_link_container = ""
     cfg.server_public_key = "c2VydmVyLXB1YmxpYy1rZXktMzJieXRlcy1wYWRkZWQ="
     cfg.endpoint_host = "vpn.example.com"
     cfg.endpoint_port = 51820

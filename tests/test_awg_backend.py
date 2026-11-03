@@ -132,3 +132,80 @@ def test_live_peers_parses_awg_show(cfg):
     write_server_conf(cfg.server_conf, keys.generate_private_key())
     backend = AmneziaWG(cfg, runner=lambda argv, **kw: Result(0, b"keyA\nkeyB\n"))
     assert backend.live_peers() == ["keyA", "keyB"]
+
+
+# --- Docker mode (Amnezia's containerised server: no awg, no conf on the host) ----------
+class DockerFakeRunner(object):
+    """Records `docker exec` calls and captures the payloads written via stdin."""
+
+    def __init__(self, returncode=0, read_conf="[Interface]\nPrivateKey = x\nJc = 4\n"):
+        self.calls = []
+        self.returncode = returncode
+        self.read_conf = read_conf
+        self.written = {}
+
+    def __call__(self, argv, input=None, **kwargs):
+        self.calls.append({"argv": list(argv), "input": input})
+        if "cat" in argv and input is None:
+            return Result(0, self.read_conf.encode())
+        if input is not None:
+            target = argv[-1]
+            if target.startswith("cat > "):
+                target = target[len("cat > "):].strip("'")
+                self.written[target] = input.decode()
+            elif target.startswith("set -e"):
+                self.written["conf"] = input.decode()
+        return Result(self.returncode, b"", b"")
+
+
+def test_docker_mode_uses_docker_exec(cfg):
+    cfg.awg_docker = "amnezia-awg2"
+    cfg.server_conf = "/opt/amnezia/awg/awg0.conf"
+    cfg.server_public_key = ""
+    runner = DockerFakeRunner(read_conf="[Interface]\nPrivateKey = %s\nJc = 4\n"
+                               % keys.generate_private_key())
+    backend = AmneziaWG(cfg, runner=runner)
+    assert backend.transport.__class__.__name__ == "DockerTransport"
+
+    backend.sync([peer()])
+
+    # everything goes through `docker exec -i <container>`
+    for call in runner.calls:
+        assert call["argv"][:4] == ["docker", "exec", "-i", "amnezia-awg2"], call["argv"]
+    syncconf = [c for c in runner.calls if "syncconf" in c["argv"]][0]
+    assert syncconf["argv"][4:] == ["awg", "syncconf", "awg0", syncconf["argv"][-1]]
+    assert syncconf["argv"][-1].startswith("/tmp/awgbot-")       # path inside the container
+    staged = runner.written[syncconf["argv"][-1]]
+    assert "PublicKey = pubA" in staged and "PostUp" not in staged
+    # config file written back inside the container, with a .bak take
+    assert "PublicKey = pubA" in runner.written["conf"]
+    assert ".awgbot.bak" in str([c["argv"] for c in runner.calls if c["input"] and
+                                 c["argv"][-1].startswith("set -e")])
+
+
+def test_docker_mode_reads_conf_from_container(cfg):
+    cfg.awg_docker = "amnezia-awg"
+    cfg.server_conf = "/opt/amnezia/awg/awg0.conf"
+    runner = DockerFakeRunner(read_conf="[Interface]\nPrivateKey = x\nS1 = 15\nS3 = 43\n")
+    backend = AmneziaWG(cfg, runner=runner)
+    assert backend.server_text().startswith("[Interface]")
+    assert [k for k, _ in backend.obfuscation()] == ["S1", "S3"]
+
+
+def test_docker_mode_reports_container_errors(cfg):
+    cfg.awg_docker = "amnezia-awg2"
+    cfg.server_conf = "/opt/amnezia/awg/awg0.conf"
+    runner = DockerFakeRunner(returncode=1)
+    backend = AmneziaWG(cfg, runner=runner)
+    with pytest.raises(BackendError):
+        backend.sync([peer()])
+
+
+def test_existing_ips_come_from_unmanaged_peers(cfg):
+    priv = keys.generate_private_key()
+    write_server_conf(cfg.server_conf, priv)
+    cfg.server_public_key = keys.public_key(priv)
+    backend = AmneziaWG(cfg, runner=FakeRunner())
+    assert backend.existing_ips() == {"10.8.0.9"}      # the hand-made peer in the fixture
+    backend.sync([peer("pubA", ip="10.8.0.2")])
+    assert backend.existing_ips() == {"10.8.0.9"}      # managed region is not counted

@@ -46,7 +46,7 @@ def save_offset(cfg, offset):
 
 def cmd_check(cfg):
     print("settings:\n%s" % cfg.describe())
-    cfg.validate()
+    cfg.validate(need_token=False)   # the token is only needed to actually poll Telegram
     store, backend, _ = build(cfg)
     print("server public key: %s" % backend.server_public_key())
     print("obfuscation params: %s" % (", ".join(k for k, _ in backend.obfuscation()) or "none"))

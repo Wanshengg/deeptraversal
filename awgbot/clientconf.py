@@ -69,6 +69,32 @@ def server_mtu(text):
     return None
 
 
+def existing_peer_ips(text):
+    """Client addresses already used by peers the bot does not manage.
+
+    Servers set up before the bot already have hand-made peers; their /32 addresses must
+    never be handed out to someone else, so they are treated as taken.
+    """
+    pattern = re.compile(
+        r"%s.*?%s" % (re.escape(MANAGED_BEGIN), re.escape(MANAGED_END)), re.S
+    )
+    text = pattern.sub("", text or "")
+    ips = set()
+    for name, items in _sections(text):
+        if name != "peer":
+            continue
+        for key, value in items:
+            if key.lower() != "allowedips":
+                continue
+            for chunk in value.split(","):
+                chunk = chunk.strip()
+                if not chunk:
+                    continue
+                ip = chunk.split("/")[0]
+                ips.add(ip)
+    return ips
+
+
 def strip_for_syncconf(text):
     """Mimic `awg-quick strip`: drop interface keys that are not understood by `awg`."""
     out = []
