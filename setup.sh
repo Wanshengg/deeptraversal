@@ -106,6 +106,8 @@ if [ "$DRY_RUN" -eq 0 ]; then
 fi
 
 PY="$DEST/.venv/bin/python"
+# любой запуск проекта — из его каталога, иначе `-m awgbot` не найдёт пакет
+run_py() { ( cd "$DEST" && PYTHONPATH="$DEST" "$PY" "$@" ); }
 
 # --- detection (по возможности — до установки venv, на системном python) -----
 DETECT_CMD=(python3 -m awgbot.detect)
@@ -162,7 +164,7 @@ log "пишу $DEST/.env"
 ENV_ARGS=(--write-env "$DEST/.env" --dest "$DEST" --token "$TOKEN" --admin "$ADMIN")
 if [ -n "$HOST" ]; then ENV_ARGS+=(--host "$HOST"); fi
 if [ -n "$PORT" ]; then ENV_ARGS+=(--port "$PORT"); fi
-"$PY" -m awgbot.detect "${ENV_ARGS[@]}" >/dev/null
+run_py -m awgbot.detect "${ENV_ARGS[@]}" >/dev/null
 chmod 600 "$DEST/.env"
 
 # --- systemd -----------------------------------------------------------------
@@ -172,7 +174,7 @@ sed -i "s#/opt/deeptraversal#$DEST#g" "/etc/systemd/system/$SERVICE.service"
 systemctl daemon-reload
 
 log "проверяю настройки"
-"$PY" -m awgbot --env "$DEST/.env" --check || die "--check не прошёл, смотрите вывод выше"
+run_py -m awgbot --env "$DEST/.env" --check || die "--check не прошёл, смотрите вывод выше"
 
 if [ "$NO_START" -eq 1 ]; then
   log "готово. Запуск: systemctl enable --now $SERVICE"
@@ -207,7 +209,7 @@ $(printf '\033[1;32m✓\033[0m') deeptraversal установлен и запу�
   3. чужим людям бот отвечает только после вашего «Выдать»
 
 Полезное:
-  $PY -m awgbot --env $DEST/.env --list            # актуальные ключи
-  $PY -m awgbot --env $DEST/.env --prune           # подчистить удалённое мимо бота
-  $PY -m awgbot --env $DEST/.env --sync-clients-table
+  cd $DEST && .venv/bin/python -m awgbot --env .env --list        # актуальные ключи
+  cd $DEST && .venv/bin/python -m awgbot --env .env --prune       # подчистить удалённое мимо бота
+  cd $DEST && .venv/bin/python -m awgbot --env .env --sync-clients-table
 EOF
