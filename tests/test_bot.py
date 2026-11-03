@@ -158,3 +158,53 @@ def test_unknown_command_and_callback_do_not_crash(bot, tg):
     bot.handle(callback(42, "req:abc:ok"))
     bot.handle(callback(42, "weird"))
     assert tg.answers                          # callbacks always answered
+
+
+def _extract_link(texts):
+    import re
+    found = [re.search(r"<code>(vpn://[^<]+)</code>", t) for t in texts]
+    return [m.group(1) for m in found if m]
+
+
+def test_vpn_link_arrives_in_chat_and_imports(bot, tg, store):
+    from awgbot import vpnlink
+    approve_flow(bot, tg)
+    links = _extract_link(tg.texts_for(100))
+    assert len(links) == 1
+    envelope = vpnlink.decode_vpn_link(links[0])
+    last = vpnlink.decode_last_config(envelope)
+    assert envelope["containers"][0]["container"] == "amnezia-awg"
+    assert last["client_ip"] == "10.8.0.2/32"
+    assert last["server_pub_key"] == "c2VydmVyLXB1YmxpYy1rZXktMzJieXRlcy1wYWRkZWQ="
+    assert last["allowed_ips"] == ["0.0.0.0/0", "::/0"]
+    assert last["Jc"] == "4" and last["H1"] == "1234567"      # obfuscation survives
+    assert last["isObfuscationEnabled"] is True
+    assert last["port"] == 51820
+    # the .conf is still delivered next to it
+    assert len(tg.documents) == 1
+
+
+def test_link_is_resent_by_key_command(bot, tg, store):
+    from tests.conftest import message
+    approve_flow(bot, tg)
+    tg.messages = []
+    tg.documents = []
+    bot.handle(message(100, "/key"))
+    assert len(_extract_link(tg.texts_for(100))) == 1
+    assert len(tg.documents) == 1
+    assert len(store.active_peers(100)) == 1
+
+
+def test_link_can_be_switched_off(cfg, bot, tg, store):
+    from tests.conftest import message
+    cfg.send_vpn_link = False
+    approve_flow(bot, tg)
+    assert _extract_link(tg.texts_for(100)) == []
+    assert len(tg.documents) == 1
+
+
+def test_file_can_be_switched_off(cfg, bot, tg):
+    cfg.send_conf_file = False
+    approve_flow(bot, tg)
+    assert len(_extract_link(tg.texts_for(100))) == 1
+    assert tg.documents == []

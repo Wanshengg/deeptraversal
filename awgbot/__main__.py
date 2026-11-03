@@ -79,15 +79,24 @@ def cmd_revoke(cfg, tg_id):
     return 0
 
 
-def cmd_export(cfg, tg_id):
+def cmd_export(cfg, tg_id, link_only=False):
     store, _, prov = build(cfg)
-    result = prov.resend(tg_id)
-    if not result:
+    delivery = prov.resend(tg_id)
+    if not delivery:
         print("no active peer for %s" % tg_id)
         return 1
-    _, conf, filename = result
-    path = os.path.join(prov.export_dir(), filename)
-    print(conf)
+    if link_only:
+        if not delivery.link:
+            print("no vpn:// link for %s (SEND_VPN_LINK is off or the config is incomplete)"
+                  % tg_id)
+            return 1
+        print(delivery.link)
+        return 0
+    path = os.path.join(prov.export_dir(), delivery.filename)
+    print(delivery.conf)
+    if delivery.link:
+        print("vpn:// link (%s chars):" % len(delivery.link))
+        print(delivery.link)
     print("saved to %s" % path if os.path.exists(path) else "not saved")
     return 0
 
@@ -127,6 +136,8 @@ def main(argv=None):
                         help="revoke all peers of a Telegram user")
     parser.add_argument("--export", metavar="TG_ID", type=int,
                         help="print and re-export a user's config")
+    parser.add_argument("--link", action="store_true",
+                        help="with --export: print only the vpn:// link")
     args = parser.parse_args(argv)
 
     cfg = config_mod.load(args.env)
@@ -144,7 +155,7 @@ def main(argv=None):
         if args.revoke:
             return cmd_revoke(cfg, args.revoke)
         if args.export:
-            return cmd_export(cfg, args.export)
+            return cmd_export(cfg, args.export, link_only=args.link)
         cfg.validate()
         run_bot(cfg)
         return 0

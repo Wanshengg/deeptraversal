@@ -34,6 +34,17 @@ TEXT_ADMIN_HELP = (
 )
 
 
+TEXT_LINK = (
+    "Импорт: приложение AmneziaVPN → «+» → «Импорт из буфера обмена».\n"
+    "Скопируй строку целиком (тап по ней копирует):\n\n"
+    "<code>%s</code>"
+)
+TEXT_LINK_TOO_LONG = (
+    "Ссылка получилась длиннее лимита сообщения Telegram, поэтому отправляю файлом: "
+    "AmneziaVPN → «+» → «Импорт из файла»."
+)
+
+
 def esc(value):
     return html.escape(str(value), quote=False)
 
@@ -80,6 +91,18 @@ class Bot(object):
     def _send_conf(self, chat_id, filename, content):
         self.tg.send_document(chat_id, filename, content.encode("utf-8"),
                               caption="Твой конфиг AmneziaWG. Импортируй в AmneziaVPN.")
+
+    def _send_delivery(self, chat_id, delivery):
+        """vpn:// link first (one tap to import), .conf file as the fallback."""
+        if delivery.link:
+            if len(delivery.link) + len(TEXT_LINK) < 4000:
+                self._reply(chat_id, TEXT_LINK % esc(delivery.link))
+            else:
+                self._reply(chat_id, TEXT_LINK_TOO_LONG)
+        if self.cfg.send_conf_file:
+            caption = "Файл конфига — AmneziaVPN → «+» → «Импорт из файла»."
+            self.tg.send_document(chat_id, delivery.filename,
+                                  delivery.conf.encode("utf-8"), caption=caption)
 
     # --- messages --------------------------------------------------------------
     def _on_message(self, msg):
@@ -268,7 +291,7 @@ class Bot(object):
 
     def _issue_now(self, chat_id, tg_id, device):
         try:
-            peer, conf, filename = self.prov.issue(tg_id, device, actor=chat_id)
+            delivery = self.prov.issue(tg_id, device, actor=chat_id)
         except ProvisionError as exc:
             self._reply(chat_id, "Не получилось: %s" % esc(exc))
             return
@@ -277,19 +300,18 @@ class Bot(object):
             self._reply(chat_id, "Ошибка на сервере, попробуй позже или напиши админу.")
             return
         self.store.set_user_status(tg_id, "approved")
-        self._send_conf(chat_id, filename, conf)
+        self._send_delivery(chat_id, delivery)
         self._reply(chat_id,
-                    "Готово. IP <code>%s</code>.\n"
-                    "Если ключ не подключается — проверь, что приложение AmneziaVPN "
-                    "обновлено, и импортируй файл заново." % esc(peer.ip))
+                    "Готово. IP <code>%s</code>, устройство <code>%s</code>.\n"
+                    "Если ключ не подключается — обнови приложение AmneziaVPN и импортируй "
+                    "конфиг заново." % (esc(delivery.peer.ip), esc(delivery.peer.device)))
 
     def _resend(self, chat_id, tg_id):
-        result = self.prov.resend(tg_id)
-        if not result:
+        delivery = self.prov.resend(tg_id)
+        if not delivery:
             self._reply(chat_id, "Активного ключа нет. /start")
             return
-        _, conf, filename = result
-        self._send_conf(chat_id, filename, conf)
+        self._send_delivery(chat_id, delivery)
 
     def _decide(self, chat_id, admin_id, req_id, approve):
         row = self.store.request(req_id)

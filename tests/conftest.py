@@ -78,6 +78,8 @@ def cfg(tmp_path):
     cfg.max_peers_per_user = 1
     cfg.cooldown_s = 0
     cfg.require_approval = True
+    cfg.send_vpn_link = True
+    cfg.send_conf_file = True
     cfg.mock_state = str(tmp_path / "mock_state.json")
     cfg.log_level = "DEBUG"
     return cfg

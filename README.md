@@ -21,6 +21,9 @@
 ## Что умеет
 
 - выдача конфига по кнопке, с одобрением админа или сразу (`REQUIRE_APPROVAL=false`);
+- **две формы выдачи**: ссылка `vpn://` (импорт одним тапом, как в самом AmneziaVPN) и файл
+  `.conf` (fallback для старых версий и для `amneziawg`-клиентов); переключается
+  `SEND_VPN_LINK` / `SEND_CONF_FILE`;
 - пул адресов: IP выдаётся и переиспользуется автоматически, дубликатов не бывает;
 - один ключ на пользователя (настраивается), перевыпуск = отзыв старого;
 - `/revoke` — пользователь сам закрывает себе доступ, `awg syncconf` применяется сразу;
@@ -87,6 +90,7 @@ sudo journalctl -u awgbot -f
 | `DNS`, `ALLOWED_IPS`, `PERSISTENT_KEEPALIVE`, `MTU` | попадут в клиентский конфиг как есть |
 | `MAX_PEERS_PER_USER` | сколько ключей можно держать одному человеку (1 по умолчанию) |
 | `REQUIRE_APPROVAL` | `true` — ключ только после нажатия админом; `false` — сразу |
+| `SEND_VPN_LINK` / `SEND_CONF_FILE` | что приходит в чат: ссылка `vpn://` и/или файл `.conf` (по умолчанию оба) |
 | `DB_PATH` | SQLite рядом с ботом, создаётся с правами 0600 |
 
 ## Как это работает внутри
@@ -121,13 +125,49 @@ sudo journalctl -u awgbot -f
 Админ: `/status`, `/pending`, `/approve <id>`, `/reject <id>`, `/ban <tg_id>`,
 `/unban <tg_id>`, `/revoke <tg_id>` плюс кнопки под уведомлением о заявке.
 
-CLI: `--check`, `--list`, `--export <tg_id>`, `--revoke <tg_id>`, `--mock`.
+CLI: `--check`, `--list`, `--export <tg_id>` (добавьте `--link`, чтобы напечатать только
+`vpn://`), `--revoke <tg_id>`, `--mock`.
 
 ## Импорт в приложение
 
-AmneziaVPN → «+» → «Импорт из файла» → выбрать `.conf`. На десктопе то же самое через
-«Добавить соединение → Импорт». Конфиг содержит `[Interface]` с параметрами обфускации и
-`[Peer]` с endpoint'ом, так что приложение сразу поднимает туннель.
+Бот присылает **две вещи** — ссылку `vpn://` и файл `.conf`:
+
+- ссылка: AmneziaVPN → «+» → «Импорт из буфера обмена» (тап по строке в Telegram копирует её
+  целиком). Так же работает «Открыть в AmneziaVPN», если клиент подхватывает схему;
+- файл: AmneziaVPN → «+» → «Импорт из файла» → выбрать `.conf`.
+
+Конфиг содержит `[Interface]` с параметрами обфускации и `[Peer]` с endpoint'ом, так что
+туннель поднимается сразу после импорта.
+
+### Формат ссылки `vpn://`
+
+Разобран по исходникам клиента (`importController.cpp`, `protocols_defs.h`,
+`exportController.cpp`) и совпадает с тем, что генерирует сам AmneziaVPN:
+
+```
+vpn:// base64url( qCompress( JSON-конверт ) )        # без '=' на конце
+qCompress(data) = 4 байта BE длины + zlib-поток       # Qt QByteArray::qCompress
+```
+
+Конверт и вложенный `last_config` (сериализуется **строкой**, то есть JSON в JSON):
+
+```json
+{"containers":[{"container":"amnezia-awg","awg":{
+    "last_config":"{...}","isThirdPartyConfig":true,
+    "port":"51820","transport_proto":"udp"}}],
+ "defaultContainer":"amnezia-awg","hostName":"vpn.example.com",
+ "description":"iphone","dns1":"1.1.1.1"}
+```
+
+В `last_config` лежит и сырой INI (`config`, для отображения), и структурные поля, которые
+читает путь подключения: `client_priv_key`, `client_ip`, `server_pub_key`, `psk_key`,
+`allowed_ips` (**массив**, не строка), `mtu`, `persistent_keep_alive`, `port` (число),
+`isObfuscationEnabled` и все параметры обфускации под их INI-именами (`Jc`, `Jmin`, `Jmax`,
+`S1`…`S4`, `H1`…`H4`, `I1`…`I5`) — дословно, включая диапазоны вида `2345678-2345799` и
+CPS-теги в `I1`. Если отдать только `config`, приложение падает на подключении (error 1000):
+именно поэтому «просто закинуть .conf в JSON» не работает.
+
+Посмотреть ссылку без бота: `python -m awgbot --export <tg_id> --link`.
 
 ## Безопасность
 
@@ -153,7 +193,7 @@ AmneziaVPN → «+» → «Импорт из файла» → выбрать `.c
 
 ```bash
 .venv/bin/pip install -r requirements-dev.txt
-.venv/bin/python -m pytest -q      # 67 тестов: крипта, IPAM, парсинг конфига, backend, бот
+.venv/bin/python -m pytest -q      # 81 тест: крипта, IPAM, конфиг, vpn://, backend, бот
 ```
 
 Тесты не требуют ни AmneziaWG, ни Telegram: `AmneziaWG`-бэкенд проверяется через
@@ -167,6 +207,7 @@ awgbot/
   keys.py         генерация ключей и base64-формат WireGuard
   ipam.py         пул адресов
   clientconf.py   парсинг серверного конфига, рендер клиентского, strip для syncconf
+  vpnlink.py      сборка/разбор ссылки vpn:// (qCompress + конверт Amnezia)
   awg.py          бэкенды: AmneziaWG (real) и Mock
   provision.py    выдача/отзыв ключей — вся бизнес-логика
   store.py        SQLite
@@ -193,9 +234,8 @@ tests/            pytest
 
 ## Roadmap
 
-- [ ] формат ссылки `vpn://` (импорт без файла, как в AmneziaVPN-клиенте);
+- [ ] QR-код в ответе бота (`qrencode`) — ссылку `vpn://` клиент умеет читать камерой;
 - [ ] IPv6 для клиентов, несколько подсетей;
-- [ ] QR-код в ответе бота (`qrencode`);
 - [ ] статистика handshake'ов из `awg show` (`/who`), автоотзыв «мёртвых» ключей;
 - [ ] лимит трафика через `iptables`/`tc` на peer;
 - [ ] контейнер в Docker для серверов, где AmneziaWG уже в контейнере.

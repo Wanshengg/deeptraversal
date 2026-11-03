@@ -84,6 +84,8 @@ class Config(object):
         self.max_peers_per_user = _env_int("MAX_PEERS_PER_USER", 1)
         self.cooldown_s = _env_int("REQUEST_COOLDOWN_S", 60)
         self.require_approval = _env_bool("REQUIRE_APPROVAL", True)
+        self.send_vpn_link = _env_bool("SEND_VPN_LINK", True)
+        self.send_conf_file = _env_bool("SEND_CONF_FILE", True)
         self.mock_state = _env("MOCK_STATE", "mock_awg_state.json")
         self.log_level = _env("LOG_LEVEL", "INFO")
 

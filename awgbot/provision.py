@@ -2,7 +2,7 @@
 
 import os
 
-from . import clientconf, ipam, keys
+from . import clientconf, ipam, keys, vpnlink
 from .awg import BackendError
 
 
@@ -19,6 +19,25 @@ def safe_device_name(raw):
 def conf_filename(peer):
     """One .conf name for both the Telegram upload and the on-disk export."""
     return "amnezia-%s-%s.conf" % (safe_device_name(peer.device), peer.ip)
+
+
+class Delivery(object):
+    """Everything a user gets for one peer: .conf text plus a vpn:// import link."""
+
+    __slots__ = ("peer", "conf", "filename", "link")
+
+    def __init__(self, peer, conf, filename, link=None):
+        self.peer = peer
+        self.conf = conf
+        self.filename = filename
+        self.link = link
+
+    def __iter__(self):  # keeps `peer, conf, filename = delivery` working
+        return iter((self.peer, self.conf, self.filename))
+
+    def __repr__(self):
+        return "<Delivery %s %s link=%s chars>" % (
+            self.peer.device, self.peer.ip, len(self.link or ""))
 
 
 class Provisioner(object):
@@ -53,9 +72,19 @@ class Provisioner(object):
         os.chmod(path, 0o600)
         return path
 
+    def delivery(self, peer):
+        conf = self.config_text(peer)
+        link = None
+        if self.cfg.send_vpn_link:
+            try:
+                link = vpnlink.build_vpn_link(conf, description=safe_device_name(peer.device))
+            except vpnlink.VpnLinkError:
+                link = None  # a broken link must never block issuing the .conf
+        return Delivery(peer, conf, conf_filename(peer), link)
+
     # --- operations ------------------------------------------------------------
     def issue(self, tg_id, device, actor=None):
-        """Create (or replace) the user's peer. Returns (peer, conf_text, filename)."""
+        """Create (or replace) the user's peer. Returns a Delivery."""
         active = self.store.active_peers(tg_id)
         if len(active) >= self.cfg.max_peers_per_user:
             for peer in active[self.cfg.max_peers_per_user - 1:]:
@@ -80,11 +109,10 @@ class Provisioner(object):
             raise
 
         peer = [p for p in self.store.active_peers(tg_id) if p.id == peer_id][0]
-        conf = self.config_text(peer)
-        filename = conf_filename(peer)
-        self._write_export(peer, filename)
+        result = self.delivery(peer)
+        self._write_export(peer, result.filename)
         self.store.audit(actor or tg_id, "issue", "tg=%s ip=%s pub=%s" % (tg_id, ip, pub))
-        return peer, conf, filename
+        return result
 
     def _revoke(self, peer, actor, reason=""):
         self.store.revoke(peer.id)
@@ -101,5 +129,4 @@ class Provisioner(object):
         peers = self.store.active_peers(tg_id)
         if not peers:
             return None
-        peer = peers[0]
-        return peer, self.config_text(peer), conf_filename(peer)
+        return self.delivery(peers[0])
