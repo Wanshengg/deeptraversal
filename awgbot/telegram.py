@@ -26,7 +26,9 @@ class Telegram(object):
     def call(self, method, http_timeout=None, **params):
         payload = {k: v for k, v in params.items() if v is not None}
         for key, value in list(payload.items()):
-            if key in ("reply_markup", "link_preview_options") and not isinstance(value, str):
+            # Telegram wants JSON for structured fields; requests would otherwise send
+            # a python repr and the API answers "can't parse ... JSON object".
+            if isinstance(value, (dict, list)) and not isinstance(value, str):
                 payload[key] = json.dumps(value)
         response = self.http.post(self.url(method), data=payload,
                                   timeout=http_timeout or self.timeout)

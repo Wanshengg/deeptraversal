@@ -47,6 +47,16 @@ def test_send_message_serialises_markup_and_drops_none():
     assert "parse_mode" not in data          # None must not be sent
 
 
+def test_set_my_commands_sends_json_not_python_repr():
+    tg = client(FakeResponse({"ok": True, "result": True}))
+    tg.set_my_commands()
+    data = tg.http.calls[0]["data"]
+    assert isinstance(data["commands"], str)
+    commands = json.loads(data["commands"])          # would raise on a python repr
+    assert commands[0] == {"command": "start", "description": "Получить ключ"}
+    assert data["commands"].count("'") == 0          # no single-quoted python style
+
+
 def test_api_error_becomes_exception():
     tg = client(FakeResponse({"ok": False, "description": "chat not found"}, status=400))
     with pytest.raises(TelegramError) as exc:
