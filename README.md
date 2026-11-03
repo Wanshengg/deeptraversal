@@ -68,7 +68,32 @@ peer'ов в `mock_awg_state.json`. Удобно посмотреть, как в
 .venv/bin/python -m awgbot --export <your_tg_id>   # напечатать конфиг
 ```
 
-## Установка на сервер
+## Быстрый старт, если Amnezia уже стоит
+
+Одна команда на сервере (root нужен только для установки, спрашивает **только** токен бота и
+ваш Telegram ID — остальное находит само):
+
+```bash
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/Wanshengg/deeptraversal/main/setup.sh)"
+```
+
+или из клонированного репозитория:
+
+```bash
+git clone https://github.com/Wanshengg/deeptraversal && cd deeptraversal
+sudo ./setup.sh
+```
+
+Скрипт сам: находит контейнер `amnezia-awg`/`amnezia-awg2` или нативный `awg`, читает интерфейс,
+порт, подсеть и параметры обфускации из конфига, определяет публичный IP, ставит зависимости и
+venv в `/opt/deeptraversal`, генерирует `.env` (0600), регистрирует systemd-юнит, прогоняет
+`--check` и запускает бота, печатает имя бота из логов. Повторный запуск безопасен — обновляет код и
+сохраняет ваши токен/ID/адрес.
+
+Полезные флаги: `--dry-run` (только показать, что найдено), `--no-start`, `--host`, `--port`,
+`--dest`, `--service`, `--token`, `--admin` (для неинтерактивной установки).
+
+## Установка на сервер (руками, если нужен контроль)
 
 ```bash
 sudo ./deploy/install.sh                 # код в /opt/deeptraversal, venv, systemd-юнит
