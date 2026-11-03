@@ -19,7 +19,7 @@ import subprocess
 import tempfile
 import uuid
 
-from . import clientconf
+from . import clientconf, clientstable
 
 
 class BackendError(Exception):
@@ -76,6 +76,37 @@ class LocalTransport(object):
         return self.run([self.cfg.awg_bin] + list(argv), input=input,
                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
+    # --- Amnezia's "Users" table (sits next to the config) ---------------------
+    @property
+    def clients_table_path(self):
+        if getattr(self.cfg, "clients_table", ""):
+            return self.cfg.clients_table
+        return os.path.join(os.path.dirname(self.cfg.server_conf), "clientsTable")
+
+    def read_clients_table(self):
+        path = self.clients_table_path
+        if not os.path.exists(path):
+            return None
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                return fh.read()
+        except IOError:
+            return None
+
+    def write_clients_table(self, text):
+        path = self.clients_table_path
+        mode = (os.stat(path).st_mode & 0o777) if os.path.exists(path) else 0o600
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(os.path.abspath(path)),
+                                   prefix=".clientsTable-")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(text)
+            os.chmod(tmp, mode)
+            os.replace(tmp, path)
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+
 
 class DockerTransport(object):
     """Config and `awg` inside the Amnezia container (`amnezia-awg` / `amnezia-awg2`).
@@ -130,6 +161,29 @@ class DockerTransport(object):
     def awg(self, argv, input=None):
         return self._exec([self.cfg.awg_bin] + list(argv), input=input)
 
+    # --- Amnezia's "Users" table (inside the container) -----------------------
+    @property
+    def clients_table_path(self):
+        if getattr(self.cfg, "clients_table", ""):
+            return self.cfg.clients_table
+        return "/%s/clientsTable" % os.path.dirname(self.cfg.server_conf).lstrip("/")
+
+    def read_clients_table(self):
+        result = self._exec(["cat", self.clients_table_path])
+        if getattr(result, "returncode", 1) != 0:
+            return None          # older installs simply have no table
+        return result.stdout.decode("utf-8", "replace")
+
+    def write_clients_table(self, text):
+        path = self.clients_table_path
+        result = self._exec(
+            ["sh", "-c", "set -e; cat > '{p}.new'; chmod 600 '{p}.new'; "
+                         "mv -f '{p}.new' '{p}'".format(p=path)],
+            input=text.encode("utf-8"))
+        if getattr(result, "returncode", 1) != 0:
+            raise BackendError("writing %s in %s failed: %s"
+                               % (path, self.container, _stderr(result)))
+
 
 class AmneziaWG(object):
     """Owns the bot-managed peer region and applies it to the live interface."""
@@ -170,6 +224,38 @@ class AmneziaWG(object):
     def existing_ips(self):
         """Addresses of hand-added peers — never hand them out again."""
         return clientconf.existing_peer_ips(self.server_text())
+
+    # --- Amnezia's "Users" screen ---------------------------------------------
+    def register_client(self, peer):
+        """Add/refresh the peer in Amnezia's clientsTable so the app shows it.
+
+        Optional by design: older installs have no table, and the app itself may have
+        rewritten it — both must never break key issuance.
+        """
+        try:
+            text = self.transport.read_clients_table()
+            if text is None:
+                return False
+            self.transport.write_clients_table(
+                clientstable.upsert(text, peer.public_key, peer.device, peer.ip,
+                                    peer.created_at))
+            return True
+        except (BackendError, OSError):
+            return False
+
+    def unregister_client(self, peer):
+        try:
+            text = self.transport.read_clients_table()
+            if text is None:
+                return False
+            self.transport.write_clients_table(clientstable.remove(text, peer.public_key))
+            return True
+        except (BackendError, OSError):
+            return False
+
+    def clients_in_app(self):
+        text = self.transport.read_clients_table()
+        return clientstable.ids(text) if text else set()
 
     def sync(self, peers):
         """Rewrite the managed region from `peers` and push it to the live interface.
@@ -256,6 +342,24 @@ class Mock(object):
 
     def existing_ips(self):
         return set(self._state.get("existing_ips", []))
+
+    def register_client(self, peer):
+        entries = self._state.setdefault("clients", [])
+        text = clientstable.upsert(clientstable.dumps(entries), peer.public_key,
+                                   peer.device, peer.ip, peer.created_at)
+        self._state["clients"] = clientstable.parse(text)
+        self._save()
+        return True
+
+    def unregister_client(self, peer):
+        entries = self._state.setdefault("clients", [])
+        text = clientstable.remove(clientstable.dumps(entries), peer.public_key)
+        self._state["clients"] = clientstable.parse(text)
+        self._save()
+        return True
+
+    def clients_in_app(self):
+        return {e["clientId"] for e in self._state.get("clients", [])}
 
     def sync(self, peers):
         self._state["peers"] = [

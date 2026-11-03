@@ -111,6 +111,36 @@ def test_allocation_still_recycles_revoked_addresses(prov, store, backend):
     assert first.ip == second.ip == "10.8.0.3"
 
 
+def test_issue_lists_peer_in_amnezia_client_table(prov, backend):
+    peer, _, _ = prov.issue(100, "iphone")
+    assert backend.clients_in_app() == {peer.public_key}
+    entry = backend._state["clients"][0]["userData"]
+    assert entry["clientName"] == "iphone"
+    assert entry["allowedIps"] == "10.8.0.2/32"
+    assert "creationDate" in entry
+
+
+def test_revoke_drops_peer_from_the_app_table(prov, backend):
+    peer, _, _ = prov.issue(100, "iphone")
+    prov.revoke_all(100)
+    assert backend.clients_in_app() == set()
+
+
+def test_reissue_replaces_the_app_entry(cfg, store, backend):
+    from awgbot.provision import Provisioner
+    prov = Provisioner(cfg, store, backend)
+    first, _, _ = prov.issue(100, "iphone")
+    second, _, _ = prov.issue(100, "laptop")
+    assert backend.clients_in_app() == {second.public_key}
+    assert first.public_key not in backend.clients_in_app()
+
+
+def test_issue_survives_a_broken_client_table(prov, backend):
+    backend.register_client = lambda peer: False       # e.g. no clientsTable on the server
+    result = prov.issue(100, "iphone")
+    assert result.peer.ip == "10.8.0.2"                # issuance must not fail
+
+
 @pytest.mark.parametrize("raw,expected", [
     ("iphone", "iphone"),
     ("../../etc/passwd", "etcpasswd"),

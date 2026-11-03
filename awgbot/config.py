@@ -73,6 +73,9 @@ class Config(object):
         # `awg`) goes through `docker exec <container>` and AWG_CONF is a path *inside*
         # the container, usually /opt/amnezia/awg/awg0.conf.
         self.awg_docker = _env("AWG_DOCKER", "")
+        # Amnezia's "Users" screen reads this JSON, not the awg config. Empty = derive
+        # from the config directory (clientsTable sits next to awg0.conf).
+        self.clients_table = _env("AWG_CLIENTS_TABLE", "")
         self.vpn_link_container = _env("VPN_LINK_CONTAINER", "")   # empty = auto
         self.server_public_key = _env("SERVER_PUBLIC_KEY", "")
         self.endpoint_host = _env("ENDPOINT_HOST", "")

@@ -101,6 +101,30 @@ def cmd_export(cfg, tg_id, link_only=False):
     return 0
 
 
+def cmd_sync_clients(cfg):
+    """Backfill Amnezia's clientsTable from the bot's database (one-off migration)."""
+    store, backend, _ = build(cfg)
+    peers = store.active_peers()
+    if not peers:
+        print("no active peers in the db")
+        return 0
+    before = backend.clients_in_app()
+    added = 0
+    for peer in peers:
+        if peer.public_key in before:
+            print("already listed: %-20s %s" % (peer.device, peer.ip))
+            continue
+        if backend.register_client(peer):
+            added += 1
+            print("added:          %-20s %s (%s)" % (peer.device, peer.ip, peer.public_key[:12]))
+        else:
+            print("no clientsTable on the server — nothing to sync into")
+            return 1
+    print("peers in db: %s | were in clientsTable: %s | added now: %s"
+          % (len(peers), len(before), added))
+    return 0
+
+
 def run_bot(cfg):
     store, backend, prov = build(cfg)
     tg = Telegram(cfg.bot_token, api_base=cfg.api_base)
@@ -138,6 +162,8 @@ def main(argv=None):
                         help="print and re-export a user's config")
     parser.add_argument("--link", action="store_true",
                         help="with --export: print only the vpn:// link")
+    parser.add_argument("--sync-clients-table", action="store_true",
+                        help="add all db peers to Amnezia's clientsTable (app Users list)")
     args = parser.parse_args(argv)
 
     cfg = config_mod.load(args.env)
@@ -156,6 +182,8 @@ def main(argv=None):
             return cmd_revoke(cfg, args.revoke)
         if args.export:
             return cmd_export(cfg, args.export, link_only=args.link)
+        if args.sync_clients_table:
+            return cmd_sync_clients(cfg)
         cfg.validate()
         run_bot(cfg)
         return 0

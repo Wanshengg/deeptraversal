@@ -109,6 +109,7 @@ Amnezia снесёт и пиров бота). У Amnezia это штатное �
 | `TELEGRAM_API_BASE` | по умолчанию `https://api.telegram.org`; менять только для своего Bot API server |
 | `ADMIN_IDS` | ваш Telegram ID (узнать: `/id` в боте), можно несколько через запятую |
 | `AWG_CONF` | путь к серверному конфигу, обычно `/etc/amnezia/amneziawg/awg0.conf` |
+| `AWG_CLIENTS_TABLE` | путь к `clientsTable` (список пользователей для приложения AmneziaVPN); пусто = рядом с конфигом, отсутствие файла не ошибка |
 | `AWG_DOCKER` | имя контейнера, если Amnezia стоит в Docker (`amnezia-awg2`); тогда `AWG_CONF` — путь **внутри** контейнера, обычно `/opt/amnezia/awg/awg0.conf` |
 | `AWG_IFACE` | имя интерфейса, `awg0` |
 | `ENDPOINT_HOST` / `ENDPOINT_PORT` | публичный адрес и `ListenPort` сервера |
@@ -140,6 +141,13 @@ Amnezia снесёт и пиров бота). У Amnezia это штатное �
 5. **Docker**: если Amnezia стоит контейнером (`amnezia-awg2`), все операции идут через
    `docker exec -i`, а `AWG_CONF` — путь внутри контейнера. На хосте не нужны ни `awg`,
    ни сам конфиг.
+6. **Экран «Пользователи» в приложении AmneziaVPN** читает не конфиг, а файл
+   `clientsTable` рядом с ним (`/opt/amnezia/awg/clientsTable`): JSON-массив
+   `{"clientId": <public key>, "userData": {"clientName", "allowedIps", "creationDate"}}`.
+   Бот сам добавляет туда запись при выдаче и удаляет при отзыве, поэтому его ключи видны
+   в приложении с человеческим именем устройства — а трафик и последний handshake
+   приложение подтягивает из `awg show` при обновлении страницы. Есть разовая миграция для
+   уже выданных ключей: `python -m awgbot --sync-clients-table`.
 
 ## Команды
 
@@ -157,7 +165,7 @@ Amnezia снесёт и пиров бота). У Amnezia это штатное �
 `/unban <tg_id>`, `/revoke <tg_id>` плюс кнопки под уведомлением о заявке.
 
 CLI: `--check`, `--list`, `--export <tg_id>` (добавьте `--link`, чтобы напечатать только
-`vpn://`), `--revoke <tg_id>`, `--mock`.
+`vpn://`), `--revoke <tg_id>`, `--sync-clients-table`, `--mock`.
 
 ## Импорт в приложение
 

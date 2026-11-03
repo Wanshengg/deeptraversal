@@ -1,9 +1,12 @@
 """Key issuance / revocation — the part worth unit-testing without Telegram in the way."""
 
+import logging
 import os
 
 from . import clientconf, ipam, keys, vpnlink
 from .awg import BackendError
+
+log = logging.getLogger("awgbot")
 
 
 class ProvisionError(Exception):
@@ -113,13 +116,29 @@ class Provisioner(object):
         peer = [p for p in self.store.active_peers(tg_id) if p.id == peer_id][0]
         result = self.delivery(peer)
         self._write_export(peer, result.filename)
+        self._register(peer)
         self.store.audit(actor or tg_id, "issue", "tg=%s ip=%s pub=%s" % (tg_id, ip, pub))
         return result
+
+    def _register(self, peer):
+        """Mirror the peer into Amnezia's clientsTable (app's Users screen)."""
+        try:
+            if not self.backend.register_client(peer):
+                log.info("no clientsTable next to the server config, app list untouched")
+        except Exception:
+            log.warning("cannot update clientsTable for %s", peer.public_key[:8], exc_info=True)
+
+    def _unregister(self, peer):
+        try:
+            self.backend.unregister_client(peer)
+        except Exception:
+            log.warning("cannot drop %s from clientsTable", peer.public_key[:8], exc_info=True)
 
     def _revoke(self, peer, actor, reason=""):
         self.store.revoke(peer.id)
         self.store.audit(actor, "revoke", "tg=%s ip=%s %s" % (peer.tg_id, peer.ip, reason))
         self.backend.sync(self.store.active_peers())
+        self._unregister(peer)
 
     def revoke_all(self, tg_id, actor=None):
         peers = self.store.active_peers(tg_id)

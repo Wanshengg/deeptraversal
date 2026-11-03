@@ -209,3 +209,64 @@ def test_existing_ips_come_from_unmanaged_peers(cfg):
     assert backend.existing_ips() == {"10.8.0.9"}      # the hand-made peer in the fixture
     backend.sync([peer("pubA", ip="10.8.0.2")])
     assert backend.existing_ips() == {"10.8.0.9"}      # managed region is not counted
+
+
+# --- Amnezia clientsTable ("Users" screen in the app) -----------------------------------
+TABLE = """[
+    {
+        "clientId": "ADMINKEY=",
+        "userData": {
+            "allowedIps": "10.8.1.1/32",
+            "clientName": "Admin [macOS]",
+            "creationDate": "Tue Nov 3 12:46:52 2026"
+        }
+    }
+]
+"""
+
+
+class TableRunner(object):
+    def __init__(self, table=TABLE, returncode=0):
+        self.table = table
+        self.returncode = returncode
+        self.writes = []
+
+    def __call__(self, argv, input=None, **kwargs):
+        if input is not None:
+            self.writes.append(input.decode())
+            return Result(self.returncode, b"", b"")
+        if argv[-1].endswith("clientsTable"):
+            if self.table is None:
+                return Result(1, b"", b"No such file or directory")
+            return Result(0, self.table.encode())
+        return Result(0, b"")
+
+
+def test_register_client_writes_into_container_table(cfg):
+    cfg.awg_docker = "amnezia-awg2"
+    cfg.server_conf = "/opt/amnezia/awg/awg0.conf"
+    runner = TableRunner()
+    backend = AmneziaWG(cfg, runner=runner)
+    ok = backend.register_client(peer(pub="NEWKEY=", ip="10.8.1.8"))
+    assert ok is True
+    assert len(runner.writes) == 1
+    written = runner.writes[0]
+    assert "NEWKEY=" in written and "Admin [macOS]" in written   # others preserved
+    assert '"allowedIps": "10.8.1.8/32"' in written
+
+
+def test_unregister_client_removes_from_table(cfg):
+    cfg.awg_docker = "amnezia-awg2"
+    cfg.server_conf = "/opt/amnezia/awg/awg0.conf"
+    runner = TableRunner(table=TABLE.replace('"clientId": "ADMINKEY="', '"clientId": "KEY="'))
+    backend = AmneziaWG(cfg, runner=runner)
+    assert backend.unregister_client(peer(pub="KEY=")) is True
+    assert "KEY=" not in runner.writes[0]
+
+
+def test_register_client_is_optional_when_table_missing(cfg, tmp_path):
+    cfg.server_conf = str(tmp_path / "awg0.conf")
+    write_server_conf(cfg.server_conf, keys.generate_private_key())
+    backend = AmneziaWG(cfg, runner=FakeRunner())     # no clientsTable on disk
+    assert backend.clients_in_app() == set()
+    assert backend.register_client(peer()) is False    # must not raise
