@@ -142,18 +142,47 @@ def container_for(kv):
     return AWG_CONTAINER
 
 
+# protocols::awg::awgV1_5 / awgV2 / awgV3 in the client constants
+AWG_V3_MARKERS = ("HeaderProtectionKey", "ContentPaddingAddition", "RekeyAfterTime",
+                  "RekeyTimeout", "RejectAfterTime", "KeepaliveTimeout",
+                  "MaxHandshakeAttempts", "RandomTrailers", "DisableCookies")
+
+
+def protocol_version_for(kv, last=None):
+    """Mirror the client's own awgVersionOf(): markers first, then junk sizes.
+
+    The app derives this itself, but it also writes `protocol_version` into its own
+    exports — sending it explicitly is what makes the UI say "version 3.1" instead of
+    silently falling back to 2.
+    """
+    source = kv if last is None else last
+    if any(str(source.get(key, "")).strip() for key in AWG_V3_MARKERS):
+        return "3.1"
+    if source.get("S3") or source.get("S4"):
+        return "2"
+    if any(str(source.get("H%d" % i, "")).find("-") > 0 for i in (1, 2, 3, 4)):
+        return "2"
+    if any(str(source.get("I%d" % i, "")).strip() for i in (1, 2, 3, 4, 5)):
+        return "1.5"
+    return ""
+
+
 def build_envelope(conf_text, description="", container=None):
     last, kv, host, port = build_last_config(conf_text)
     container = container or container_for(kv)
+    awg = {
+        "last_config": json.dumps(last, separators=(",", ":"), ensure_ascii=True),
+        "isThirdPartyConfig": True,
+        "port": str(port),
+        "transport_proto": TRANSPORT_PROTO,
+    }
+    version = protocol_version_for(kv, last)
+    if version:
+        awg["protocol_version"] = version
     envelope = {
         "containers": [{
             "container": container,
-            "awg": {
-                "last_config": json.dumps(last, separators=(",", ":"), ensure_ascii=True),
-                "isThirdPartyConfig": True,
-                "port": str(port),
-                "transport_proto": TRANSPORT_PROTO,
-            },
+            "awg": awg,
         }],
         "defaultContainer": container,
         "hostName": host,

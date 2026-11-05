@@ -183,3 +183,28 @@ def test_awg31_params_land_in_last_config():
     assert last["MaxHandshakeAttempts"] == "15-20"
     assert last["RandomTrailers"] == "on"
     assert last["DisableCookies"] == "on"
+
+
+def test_protocol_version_is_explicit():
+    env31 = vpnlink.decode_vpn_link(vpnlink.build_vpn_link(AWG31_INI))
+    assert env31["containers"][0]["awg"]["protocol_version"] == "3.1"   # awgV3 constant
+
+    env2 = vpnlink.decode_vpn_link(vpnlink.build_vpn_link(CONF))        # S3/S4, no 3.x markers
+    assert env2["containers"][0]["awg"]["protocol_version"] == "2"
+
+    legacy = "\n".join(line for line in CONF.splitlines()
+                       if not line.startswith(("S3", "S4")))
+    env15 = vpnlink.decode_vpn_link(vpnlink.build_vpn_link(legacy))
+    assert env15["containers"][0]["awg"]["protocol_version"] == "1.5"   # I1/I4 remain
+
+    plain = "\n".join(line for line in legacy.splitlines()
+                      if not line.startswith(("I1", "I4")))
+    assert "protocol_version" not in vpnlink.decode_vpn_link(
+        vpnlink.build_vpn_link(plain))["containers"][0]["awg"]
+
+
+def test_protocol_version_follows_range_headers():
+    ranged = CONF.replace("H1 = 1234567", "H1 = 1778950080-1816592595")
+    ranged = "\n".join(line for line in ranged.splitlines()
+                       if not line.startswith(("S3", "S4")))
+    assert vpnlink.protocol_version_for(vpnlink.parse_ini(ranged)) == "2"
