@@ -171,6 +171,30 @@ class Provisioner(object):
             return None
         return self.delivery(peers[0])
 
+    def sync_clients_table(self):
+        """Re-add active peers to Amnezia's clientsTable.
+
+        The AmneziaVPN app rewrites that file from its own state whenever the server is
+        edited there, silently dropping entries for peers it did not create. So the bot
+        reconciles: at startup, after prune, and via `--sync-clients-table`.
+        """
+        peers = self.store.active_peers()
+        if not peers:
+            return 0
+        try:
+            present = set(self.backend.clients_in_app())
+        except Exception:
+            present = set()
+        added = 0
+        for peer in peers:
+            if peer.public_key in present:
+                continue
+            if self.backend.register_client(peer):
+                added += 1
+        if added:
+            log.info("clientsTable reconcile: %s peer(s) re-listed", added)
+        return added
+
     def prune(self, actor=None, force=False):
         """Drop peers that were removed outside the bot (e.g. deleted in the app).
 
@@ -199,5 +223,6 @@ class Provisioner(object):
 
         if removed:
             self.backend.sync(self.store.active_peers())
+        self.sync_clients_table()          # the app may have dropped our rows meanwhile
         known = {p.public_key for p in self.store.active_peers()}
         return PruneResult(removed, sorted(live - known), len(active))

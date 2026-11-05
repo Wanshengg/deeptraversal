@@ -122,27 +122,20 @@ def cmd_prune(cfg, force=False):
 
 
 def cmd_sync_clients(cfg):
-    """Backfill Amnezia's clientsTable from the bot's database (one-off migration)."""
-    store, backend, _ = build(cfg)
+    """Backfill Amnezia's clientsTable from the bot's database."""
+    store, backend, prov = build(cfg)
     peers = store.active_peers()
     if not peers:
         print("no active peers in the db")
         return 0
     before = backend.clients_in_app()
-    added = 0
+    added = prov.sync_clients_table()
     for peer in peers:
-        if peer.public_key in before:
-            print("already listed: %-20s %s" % (peer.device, peer.ip))
-            continue
-        if backend.register_client(peer):
-            added += 1
-            print("added:          %-20s %s (%s)" % (peer.device, peer.ip, peer.public_key[:12]))
-        else:
-            print("no clientsTable on the server — nothing to sync into")
-            return 1
-    print("peers in db: %s | were in clientsTable: %s | added now: %s"
+        state = "already listed" if peer.public_key in before else "added         "
+        print("%s %-20s %-14s %s" % (state, peer.device, peer.ip, peer.public_key[:12]))
+    print("peers in db: %s | were listed: %s | added now: %s"
           % (len(peers), len(before), added))
-    return 0
+    return 0 if backend.clients_in_app() or not peers else 1
 
 
 def run_bot(cfg):
@@ -151,6 +144,10 @@ def run_bot(cfg):
     me = tg.get_me()
     log.info("connected as @%s", me.get("username"))
     bot = Bot(cfg, tg, store, prov, backend=backend)
+    try:
+        log.info("clientsTable reconcile: +%s", prov.sync_clients_table())
+    except Exception:
+        log.warning("clientsTable reconcile failed", exc_info=True)
     try:
         tg.set_my_commands()
     except Exception:

@@ -141,6 +141,21 @@ def test_issue_survives_a_broken_client_table(prov, backend):
     assert result.peer.ip == "10.8.0.2"                # issuance must not fail
 
 
+def test_sync_clients_table_readds_entries_dropped_by_the_app(prov, store, backend):
+    first, _, _ = prov.issue(100, "iphone")
+    second, _, _ = prov.issue(101, "ipad")
+    backend._state["clients"] = []                     # the AmneziaVPN app rewrote the file
+    assert backend.clients_in_app() == set()
+    assert prov.sync_clients_table() == 2
+    assert backend.clients_in_app() == {first.public_key, second.public_key}
+
+
+def test_sync_clients_table_is_idempotent(prov, backend):
+    prov.issue(100, "iphone")
+    assert prov.sync_clients_table() == 0              # nothing to do
+    assert prov.sync_clients_table() == 0
+
+
 # --- prune: peers deleted outside the bot (e.g. in the AmneziaVPN app) ----------------
 def test_prune_drops_peer_removed_from_the_interface(prov, store, backend):
     peer, _, _ = prov.issue(100, "iphone")
