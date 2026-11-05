@@ -262,7 +262,7 @@ def render_env(info, token, admins, db_path, dest, mtu=1280, dns="1.1.1.1"):
         "MTU=%s" % mtu,
         "DB_PATH=%s/awgbot.db" % dest,
         "MOCK_STATE=%s/mock_awg_state.json" % dest,
-        "MAX_PEERS_PER_USER=1",
+        "MAX_PEERS_PER_USER=5",
         "REQUEST_COOLDOWN_S=60",
         "REQUIRE_APPROVAL=true",
         "SEND_VPN_LINK=true",

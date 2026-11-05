@@ -83,7 +83,8 @@ class Telegram(object):
     def set_my_commands(self):
         return self.call("setMyCommands", commands=[
             {"command": "start", "description": "Получить ключ"},
-            {"command": "key", "description": "Мой ключ"},
+            {"command": "keys", "description": "Мои ключи"},
+            {"command": "key", "description": "Прислать конфиг ещё раз"},
             {"command": "revoke", "description": "Отозвать ключ"},
             {"command": "id", "description": "Мой Telegram ID"},
             {"command": "help", "description": "Помощь"},

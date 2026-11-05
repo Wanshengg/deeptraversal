@@ -11,17 +11,19 @@ log = logging.getLogger("awgbot")
 TEXT_START = (
     "<b>AmneziaWG · выдача ключей</b>\n\n"
     "Я выдам тебе конфиг для приложения AmneziaVPN (протокол AmneziaWG).\n"
-    "Нажми кнопку ниже — ключ придёт файлом <code>.conf</code>, его нужно импортировать "
-    "в приложение."
+    "Можно держать несколько устройств — телефон, ноутбук, планшет: жми «Новый ключ» "
+    "столько раз, сколько нужно.\n"
+    "Ключ приходит ссылкой <code>vpn://</code> и файлом <code>.conf</code>."
 )
 TEXT_HELP = (
     "<b>Команды</b>\n"
     "/start — получить ключ\n"
-    "/key — прислать мой конфиг ещё раз\n"
+    "/keys — мои ключи: прислать заново или удалить\n"
+    "/key — прислать конфиг ещё раз\n"
     "/revoke — отозвать ключ (доступ сразу закроется)\n"
     "/id — мой Telegram ID\n"
     "/help — эта справка\n\n"
-    "Импорт: AmneziaVPN → «+» → «Импорт из файла» → выбрать .conf"
+    "Импорт: AmneziaVPN → «+» → «Импорт из буфера обмена» (ссылка) или «Импорт из файла»"
 )
 TEXT_ADMIN_HELP = (
     "<b>Админ</b>\n"
@@ -138,13 +140,23 @@ class Bot(object):
         if status == "banned":
             self._reply(chat_id, "Доступ к боту закрыт.")
             return
-        rows = [[btn("Получить ключ", "new")]]
-        if self.store.active_peers(tg_id):
-            rows.append([btn("Мой ключ", "resend")])
+        peers = self.store.active_peers(tg_id)
+        rows = [[btn("Новый ключ", "new")]]
+        if peers:
+            rows.append([btn("Мои ключи (%s)" % len(peers), "list")])
         self._reply(chat_id, TEXT_START, kb(*rows))
 
     def _cmd_key(self, chat_id, tg_id, args):
-        self._resend(chat_id, tg_id)
+        peers = self.store.active_peers(tg_id)
+        if len(peers) == 1:
+            self._send_delivery(chat_id, self.prov.resend_peer(peers[0].id, tg_id))
+        elif peers:
+            self._show_keys(chat_id, tg_id)
+        else:
+            self._reply(chat_id, "Активного ключа нет. /start")
+
+    def _cmd_keys(self, chat_id, tg_id, args):
+        self._show_keys(chat_id, tg_id)
 
     def _cmd_help(self, chat_id, tg_id, args):
         text = TEXT_HELP
@@ -160,11 +172,38 @@ class Bot(object):
             count = self.prov.revoke_all(int(args), actor=tg_id)
             self._reply(chat_id, "Отозвано ключей: %s" % count)
             return
-        count = self.prov.revoke_all(tg_id)
-        if count:
-            self._reply(chat_id, "Ключ отозван. Выдать новый — /start.")
-        else:
+        peers = self.store.active_peers(tg_id)
+        if not peers:
             self._reply(chat_id, "Активных ключей нет.")
+            return
+        if len(peers) > 1:
+            # с нескольких устройств удаляем выборочно
+            self._show_keys(chat_id, tg_id, delete_only=True)
+            return
+        peer = self.prov.revoke_peer(peers[0].id, tg_id)
+        self._reply(chat_id, "Ключ %s (%s) отозван. Новый — /start."
+                    % (esc(peer.device), esc(peer.ip)))
+
+    def _show_keys(self, chat_id, tg_id, delete_only=False):
+        peers = self.store.active_peers(tg_id)
+        limit = self.prov.peer_limit
+        header = "<b>Мои ключи: %s%s</b>" % (len(peers), (" из %s" % limit if limit else ""))
+        if not peers:
+            self._reply(chat_id, "Активных ключей нет. /start")
+            return
+        lines = [header, ""]
+        rows = []
+        for peer in peers:
+            lines.append("· <code>%s</code> — <code>%s</code>"
+                         % (esc(peer.device), esc(peer.ip)))
+            if delete_only:
+                rows.append([btn("Удалить %s" % peer.device, "delok:%s" % peer.id)])
+            else:
+                rows.append([btn("Прислать %s" % peer.device, "send:%s" % peer.id),
+                             btn("Удалить %s" % peer.device, "del:%s" % peer.id)])
+        lines.append("")
+        lines.append("«Прислать» — заново отправит ссылку и файл, «Удалить» — сразу закроет доступ.")
+        self._reply(chat_id, "\n".join(lines), kb(*rows))
 
     def _cmd_prune(self, chat_id, tg_id, args):
         if not self.is_admin(tg_id):
@@ -273,11 +312,24 @@ class Bot(object):
             wait = int(self.cfg.cooldown_s - (self.clock() - last))
             self._reply(chat_id, "Слишком часто. Попробуй через %s с." % wait)
             return
+        limit = self.prov.peer_limit
+        peers = self.store.active_peers(tg_id)
+        if limit and len(peers) >= limit:
+            self._reply(
+                chat_id,
+                "У вас уже %s ключ(ей) — это лимит (%s). Удалите ненужный и повторите."
+                % (len(peers), limit),
+                kb([btn("Мои ключи", "list")]))
+            return
         self.sessions[tg_id] = {"await": "device"}
+        hint = ""
+        if peers:
+            hint = " (у вас уже %s, это будет ещё один — например <code>%s</code>)" % (
+                len(peers), "iphone-2")
         self._reply(
             chat_id,
             "Как назовём устройство? Пришли имя (например <code>iphone</code>, "
-            "<code>laptop</code>). Имя попадёт в название файла конфига.",
+            "<code>laptop</code>). Имя попадёт в название файла конфига." + hint,
             kb([btn("Отмена", "cancel")]),
         )
 
@@ -314,17 +366,24 @@ class Bot(object):
             return
         self.store.set_user_status(tg_id, "approved")
         self._send_delivery(chat_id, delivery)
+        peers = self.store.active_peers(tg_id)
+        limit = self.prov.peer_limit
+        total = "%s%s" % (len(peers), (" из %s" % limit if limit else ""))
         self._reply(chat_id,
-                    "Готово. IP <code>%s</code>, устройство <code>%s</code>.\n"
-                    "Если ключ не подключается — обнови приложение AmneziaVPN и импортируй "
-                    "конфиг заново." % (esc(delivery.peer.ip), esc(delivery.peer.device)))
+                    "Готово. Устройство <code>%s</code>, IP <code>%s</code>. "
+                    "Всего ключей: %s.\n"
+                    "Нужен ещё один — «Новый ключ» в /start; список и удаление — /keys."
+                    % (esc(delivery.peer.device), esc(delivery.peer.ip), total))
 
     def _resend(self, chat_id, tg_id):
-        delivery = self.prov.resend(tg_id)
-        if not delivery:
+        peers = self.store.active_peers(tg_id)
+        if not peers:
             self._reply(chat_id, "Активного ключа нет. /start")
             return
-        self._send_delivery(chat_id, delivery)
+        if len(peers) == 1:
+            self._send_delivery(chat_id, self.prov.resend_peer(peers[0].id, tg_id))
+        else:
+            self._show_keys(chat_id, tg_id)
 
     def _decide(self, chat_id, admin_id, req_id, approve):
         row = self.store.request(req_id)
@@ -361,11 +420,38 @@ class Bot(object):
 
         if data == "new":
             self._start_request(chat_id, tg_id)
-        elif data == "resend":
-            self._resend(chat_id, tg_id)
+        elif data in ("resend", "list"):
+            self._show_keys(chat_id, tg_id)
         elif data == "cancel":
             self.sessions.pop(tg_id, None)
             self._reply(chat_id, "Отменено.")
+        elif data.startswith("send:"):
+            peer_id = data.split(":", 1)[1]
+            delivery = (self.prov.resend_peer(int(peer_id), tg_id)
+                        if peer_id.isdigit() else None)
+            if delivery:
+                self._send_delivery(chat_id, delivery)
+            else:
+                self._reply(chat_id, "Ключ не найден — возможно, уже удалён.")
+        elif data.startswith("del:"):
+            peer_id = data.split(":", 1)[1]
+            peer = self.store.peer(int(peer_id)) if peer_id.isdigit() else None
+            if not peer or peer.tg_id != tg_id:
+                self._reply(chat_id, "Ключ не найден.")
+                return
+            self._reply(chat_id,
+                        "Удалить ключ <code>%s</code> (%s)? Доступ закроется сразу."
+                        % (esc(peer.device), esc(peer.ip)),
+                        kb([btn("Удалить", "delok:%s" % peer.id), btn("Отмена", "cancel")]))
+        elif data.startswith("delok:"):
+            peer_id = data.split(":", 1)[1]
+            peer = (self.prov.revoke_peer(int(peer_id), tg_id)
+                    if peer_id.isdigit() else None)
+            if peer:
+                self._reply(chat_id, "Ключ <code>%s</code> (%s) удалён."
+                            % (esc(peer.device), esc(peer.ip)))
+            else:
+                self._reply(chat_id, "Ключ не найден.")
         elif data.startswith("req:"):
             if not self.is_admin(tg_id):
                 self._reply(chat_id, "Только админ может это сделать.")

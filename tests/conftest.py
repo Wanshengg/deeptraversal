@@ -78,7 +78,7 @@ def cfg(tmp_path):
     cfg.keepalive = 25
     cfg.mtu = None
     cfg.db_path = str(tmp_path / "awgbot.db")
-    cfg.max_peers_per_user = 1
+    cfg.max_peers_per_user = 5
     cfg.cooldown_s = 0
     cfg.require_approval = True
     cfg.send_vpn_link = True

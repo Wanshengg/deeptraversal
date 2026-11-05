@@ -23,7 +23,7 @@ def test_start_shows_key_button(bot, tg):
     assert "AmneziaWG" in tg.messages[-1]["text"]
     labels = [b["text"] for row in tg.messages[-1]["reply_markup"]["inline_keyboard"]
               for b in row]
-    assert "Получить ключ" in labels
+    assert "Новый ключ" in labels
 
 
 def test_full_approval_flow_issues_config(bot, tg, store):
@@ -233,3 +233,97 @@ def test_prune_refusal_is_reported_to_admin(bot, tg, store, backend):
     bot.handle(message(42, "/prune"))
     assert "не выполнен" in tg.last_text_for(42)    # safety check tells the admin why
     assert len(store.active_peers(100)) == 1
+
+
+# --- несколько ключей на одного человека -----------------------------------------------
+def issue_as_admin(bot, tg, device, user=42):
+    from tests.conftest import message, callback
+    bot.handle(message(user, "/start"))
+    bot.handle(callback(user, "new"))
+    bot.handle(message(user, device))
+
+
+def test_admin_can_hold_several_keys(bot, tg, store):
+    issue_as_admin(bot, tg, "iphone")
+    issue_as_admin(bot, tg, "laptop")
+    peers = store.active_peers(42)
+    assert len(peers) == 2
+    assert len({p.ip for p in peers}) == 2
+    assert len(tg.documents) == 2
+    assert "Всего ключей: 2" in tg.last_text_for(42)
+
+
+def test_keys_command_lists_devices_with_actions(bot, tg, store):
+    from tests.conftest import message
+    issue_as_admin(bot, tg, "iphone")
+    issue_as_admin(bot, tg, "laptop")
+    bot.handle(message(42, "/keys"))
+    text = tg.last_text_for(42)
+    assert "Мои ключи: 2" in text
+    assert "iphone" in text and "laptop" in text
+    buttons = [b["callback_data"] for row in tg.messages[-1]["reply_markup"]["inline_keyboard"]
+               for b in row]
+    assert any(b.startswith("send:") for b in buttons)
+    assert any(b.startswith("del:") for b in buttons)
+
+
+def test_send_callback_returns_that_device(bot, tg, store):
+    from tests.conftest import callback
+    issue_as_admin(bot, tg, "iphone")
+    issue_as_admin(bot, tg, "laptop")
+    first, second = store.active_peers(42)
+    tg.documents = []
+    bot.handle(callback(42, "send:%s" % first.id))
+    assert len(tg.documents) == 1
+    assert first.ip in tg.documents[0]["content"].decode()
+
+
+def test_delete_needs_confirmation_and_keeps_other_key(bot, tg, store):
+    from tests.conftest import callback
+    issue_as_admin(bot, tg, "iphone")
+    issue_as_admin(bot, tg, "laptop")
+    first, second = store.active_peers(42)
+    bot.handle(callback(42, "del:%s" % first.id))
+    assert "Удалить ключ" in tg.last_text_for(42)
+    assert len(store.active_peers(42)) == 2          # до подтверждения ничего не удалено
+    bot.handle(callback(42, "delok:%s" % first.id))
+    assert [p.id for p in store.active_peers(42)] == [second.id]
+
+
+def test_cannot_delete_someone_elses_key(bot, tg, store):
+    from tests.conftest import callback
+    issue_as_admin(bot, tg, "iphone")                 # ключ админа (42)
+    peer = store.active_peers(42)[0]
+    bot.handle(callback(100, "delok:%s" % peer.id))    # чужой пользователь
+    assert "не найден" in tg.last_text_for(100)
+    assert len(store.active_peers(42)) == 1
+
+
+def test_limit_message_when_at_cap(cfg, bot, tg, store):
+    from tests.conftest import callback
+    cfg.max_peers_per_user = 1
+    issue_as_admin(bot, tg, "iphone")
+    bot.handle(callback(42, "new"))
+    assert "лимит" in tg.last_text_for(42)
+    assert len(store.active_peers(42)) == 1
+
+
+def test_revoke_with_several_keys_offers_a_choice(bot, tg, store):
+    from tests.conftest import message
+    issue_as_admin(bot, tg, "iphone")
+    issue_as_admin(bot, tg, "laptop")
+    bot.handle(message(42, "/revoke"))
+    assert len(store.active_peers(42)) == 2           # ничего не снесено пачкой
+    buttons = [b["callback_data"] for row in tg.messages[-1]["reply_markup"]["inline_keyboard"]
+               for b in row]
+    assert buttons and all(b.startswith("delok:") for b in buttons)
+
+
+def test_key_command_with_several_keys_shows_list(bot, tg, store):
+    from tests.conftest import message
+    issue_as_admin(bot, tg, "iphone")
+    issue_as_admin(bot, tg, "laptop")
+    tg.documents = []
+    bot.handle(message(42, "/key"))
+    assert tg.documents == []                         # не угадываем, какой ключ нужен
+    assert "Мои ключи: 2" in tg.last_text_for(42)

@@ -94,7 +94,7 @@ class Config(object):
         self.keepalive = _env_int("PERSISTENT_KEEPALIVE", 25)
         self.mtu = _env_int("MTU", 0) or None
         self.db_path = _env("DB_PATH", "awgbot.db")
-        self.max_peers_per_user = _env_int("MAX_PEERS_PER_USER", 1)
+        self.max_peers_per_user = _env_int("MAX_PEERS_PER_USER", 5)
         self.cooldown_s = _env_int("REQUEST_COOLDOWN_S", 60)
         self.require_approval = _env_bool("REQUIRE_APPROVAL", True)
         self.send_vpn_link = _env_bool("SEND_VPN_LINK", True)

@@ -98,6 +98,10 @@ class Store(object):
     def user(self, tg_id):
         return self.conn.execute("SELECT * FROM users WHERE tg_id=?", (tg_id,)).fetchone()
 
+    def peer(self, peer_id):
+        row = self.conn.execute("SELECT * FROM peers WHERE id=?", (peer_id,)).fetchone()
+        return Peer.from_row(row) if row and row["revoked_at"] is None else None
+
     def set_user_status(self, tg_id, status, note=None):
         self.conn.execute(
             "INSERT INTO users(tg_id, status, created_at, note) VALUES(?,?,?,?) "

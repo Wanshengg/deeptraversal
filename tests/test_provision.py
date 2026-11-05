@@ -29,24 +29,76 @@ def test_issue_creates_peer_conf_and_export(prov, store, backend, cfg):
     assert stat.S_IMODE(os.stat(export).st_mode) == 0o600
 
 
-def test_second_issue_replaces_the_first_peer(prov, store):
+def test_second_issue_adds_another_key(prov, store):
     first, _, _ = prov.issue(100, "iphone")
     second, _, _ = prov.issue(100, "laptop")
     active = store.active_peers(100)
-    assert [p.id for p in active] == [second.id]
-    assert active[0].ip == first.ip            # address is recycled, not leaked
-    assert store.used_ips() == {first.ip}
+    assert sorted(p.id for p in active) == sorted([first.id, second.id])
+    assert first.ip != second.ip                      # свой адрес у каждого устройства
+    assert store.used_ips() == {first.ip, second.ip}
 
 
-def test_max_peers_per_user_is_enforced(cfg, store, backend):
+def test_same_device_name_gets_a_suffix(prov, store):
+    prov.issue(100, "iphone")
+    again, _, _ = prov.issue(100, "iphone")
+    third, _, _ = prov.issue(100, "iphone")
+    assert [again.device, third.device] == ["iphone-2", "iphone-3"]
+    names = {p.device for p in store.active_peers(100)}
+    assert len(names) == 3
+
+
+def test_peer_limit_raises_instead_of_silently_replacing(cfg, store, backend):
+    from awgbot.provision import Provisioner, ProvisionError
     cfg.max_peers_per_user = 2
     prov = Provisioner(cfg, store, backend)
     prov.issue(100, "a")
     prov.issue(100, "b")
-    third, _, _ = prov.issue(100, "c")
-    assert len(store.active_peers(100)) == 2
-    assert third.device == "c"
-    assert store.active_peers(100)[-1].device == "c"
+    with pytest.raises(ProvisionError) as exc:
+        prov.issue(100, "c")
+    assert "удалите" in str(exc.value).lower()
+    assert len(store.active_peers(100)) == 2          # ничего не отозвано
+
+
+def test_limit_zero_means_unlimited(cfg, store, backend):
+    from awgbot.provision import Provisioner
+    cfg.max_peers_per_user = 0
+    cfg.subnet = "10.8.0.0/24"
+    prov = Provisioner(cfg, store, backend)
+    for i in range(6):
+        prov.issue(100, "dev%s" % i)
+    assert len(store.active_peers(100)) == 6
+
+
+def test_replace_mode_still_revokes_old_keys(cfg, store, backend):
+    from awgbot.provision import Provisioner
+    prov = Provisioner(cfg, store, backend)
+    first, _, _ = prov.issue(100, "iphone")
+    prov.issue(100, "laptop")
+    only, _, _ = prov.issue(100, "desktop", replace=True)
+    active = store.active_peers(100)
+    assert [p.id for p in active] == [only.id]
+    assert active[0].ip == first.ip                   # адрес переиспользован
+
+
+def test_resend_peer_targets_one_device(prov, store):
+    first, _, _ = prov.issue(100, "iphone")
+    second, _, _ = prov.issue(100, "laptop")
+    delivery = prov.resend_peer(second.id, 100)
+    assert delivery.peer.id == second.id
+    assert "Address = %s/32" % second.ip in delivery.conf
+    assert prov.resend_peer(first.id, 999) is None     # чужой ключ не отдаём
+    assert prov.resend_peer(123456, 100) is None
+
+
+def test_revoke_peer_removes_only_that_device(prov, store, backend):
+    first, _, _ = prov.issue(100, "iphone")
+    second, _, _ = prov.issue(100, "laptop")
+    revoked = prov.revoke_peer(first.id, 100)
+    assert revoked.id == first.id
+    assert [p.id for p in store.active_peers(100)] == [second.id]
+    assert backend.clients_in_app() == {second.public_key}
+    assert prov.revoke_peer(second.id, 999) is None    # чужой ключ не трогаем
+    assert len(store.active_peers(100)) == 1
 
 
 def test_pool_exhaustion_raises(prov, store):
@@ -130,7 +182,7 @@ def test_reissue_replaces_the_app_entry(cfg, store, backend):
     from awgbot.provision import Provisioner
     prov = Provisioner(cfg, store, backend)
     first, _, _ = prov.issue(100, "iphone")
-    second, _, _ = prov.issue(100, "laptop")
+    second, _, _ = prov.issue(100, "laptop", replace=True)
     assert backend.clients_in_app() == {second.public_key}
     assert first.public_key not in backend.clients_in_app()
 

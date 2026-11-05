@@ -107,12 +107,38 @@ class Provisioner(object):
         return Delivery(peer, conf, conf_filename(peer), link)
 
     # --- operations ------------------------------------------------------------
-    def issue(self, tg_id, device, actor=None):
-        """Create (or replace) the user's peer. Returns a Delivery."""
+    @property
+    def peer_limit(self):
+        """0 (or empty) means unlimited."""
+        return int(getattr(self.cfg, "max_peers_per_user", 0) or 0)
+
+    def _unique_device(self, tg_id, device):
+        """Two phones may be called 'iphone' — keep names (and file names) distinct."""
+        base = safe_device_name(device)
+        taken = {safe_device_name(p.device) for p in self.store.active_peers(tg_id)}
+        if base not in taken:
+            return base
+        index = 2
+        while True:
+            candidate = "%s-%d" % (base[:28], index)
+            if candidate not in taken:
+                return candidate
+            index += 1
+
+    def issue(self, tg_id, device, actor=None, replace=False):
+        """Issue one more peer for the user. Returns a Delivery.
+
+        Several devices per person are normal, so this adds a peer until the limit is hit.
+        `replace=True` keeps the old "one key per user" behaviour (revoke, then issue).
+        """
         active = self.store.active_peers(tg_id)
-        if len(active) >= self.cfg.max_peers_per_user:
-            for peer in active[self.cfg.max_peers_per_user - 1:]:
+        if replace:
+            for peer in active:
                 self._revoke(peer, actor or tg_id, reason="reissue")
+        elif self.peer_limit and len(active) >= self.peer_limit:
+            raise ProvisionError(
+                "у вас уже %s ключ(ей) из %s — удалите ненужный (/keys), чтобы выдать новый"
+                % (len(active), self.peer_limit))
 
         used = self.store.used_ips() | set(self.backend.existing_ips())
         ip = ipam.allocate(self.cfg.subnet, self.cfg.server_ip, used, self.cfg.reserved_ips)
@@ -122,7 +148,7 @@ class Provisioner(object):
         priv = keys.generate_private_key()
         pub = keys.public_key(priv)
         psk = keys.generate_preshared_key()
-        device = safe_device_name(device)
+        device = self._unique_device(tg_id, device)
 
         peer_id = self.store.add_peer(tg_id, device, pub, priv, psk, ip)
         peers = self.store.active_peers()
@@ -166,10 +192,26 @@ class Provisioner(object):
         return len(peers)
 
     def resend(self, tg_id):
+        """First active peer of the user (kept for the old one-key callers)."""
         peers = self.store.active_peers(tg_id)
         if not peers:
             return None
         return self.delivery(peers[0])
+
+    def resend_peer(self, peer_id, tg_id=None):
+        """Delivery for one specific peer, optionally ownership-checked."""
+        for peer in self.store.active_peers(tg_id):
+            if peer.id == peer_id:
+                return self.delivery(peer)
+        return None
+
+    def revoke_peer(self, peer_id, tg_id=None, actor=None):
+        """Revoke one peer (and only if it belongs to `tg_id`, when given)."""
+        for peer in self.store.active_peers(tg_id):
+            if peer.id == peer_id:
+                self._revoke(peer, actor or tg_id or "cli", reason="user request")
+                return peer
+        return None
 
     def sync_clients_table(self):
         """Re-add active peers to Amnezia's clientsTable.
