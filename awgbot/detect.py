@@ -326,8 +326,8 @@ def main(argv=None):
         admins = args.admin or old.get("ADMIN_IDS", "")
         if not args.host:
             info["endpoint_host"] = old.get("ENDPOINT_HOST") or info["endpoint_host"]
-        if not args.port and old.get("ENDPOINT_PORT"):
-            info["port"] = old["ENDPOINT_PORT"]
+        # the port always comes from the live config: after an Amnezia reinstall it changes,
+        # and a stale port in .env would hand out configs nobody can connect to
         content = render_env(info, token, admins, args.dest, args.dest, args.mtu, args.dns)
         fd = os.open(args.write_env, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as fh:

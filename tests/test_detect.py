@@ -184,6 +184,25 @@ def test_write_env_keeps_existing_token_and_admin(tmp_path, monkeypatch):
     assert "AWG_DOCKER=amnezia-awg2" in text
 
 
+def test_write_env_keeps_host_but_takes_fresh_port(tmp_path, monkeypatch):
+    """After an Amnezia reinstall the ListenPort changes — .env must follow the server."""
+    env_path = tmp_path / ".env"
+    env_path.write_text("BOT_TOKEN=old:TOKEN\nADMIN_IDS=777\nENDPOINT_HOST=old.example\n"
+                        "ENDPOINT_PORT=34492\n")
+    info = {"mode": "docker", "container": "amnezia-awg2",
+            "conf": "/opt/amnezia/awg/awg0.conf", "iface": "awg0", "port": 47328,
+            "subnet": "10.8.1.0/24", "server_ip": "10.8.1.0", "public_key": "NEWPUB=",
+            "endpoint_host": "detected.example", "clients_table": "", "notes": [],
+            "warnings": [], "obfuscation": ["Jc"]}
+    monkeypatch.setattr(detect, "detect", lambda **kwargs: dict(info))
+    assert detect.main(["--write-env", str(env_path), "--dest", str(tmp_path)]) == 0
+    text = env_path.read_text()
+    assert "ENDPOINT_PORT=47328" in text            # new port wins
+    assert "ENDPOINT_PORT=34492" not in text
+    assert "ENDPOINT_HOST=old.example" in text      # host stays as the user set it
+    assert "SERVER_PUBLIC_KEY=NEWPUB=" in text
+
+
 def test_existing_values_parser(tmp_path):
     path = tmp_path / ".env"
     path.write_text("# comment\nA=1\nB = 2 \nbroken\n")
