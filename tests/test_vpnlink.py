@@ -194,10 +194,15 @@ def test_protocol_version_is_explicit():
 
     legacy = "\n".join(line for line in CONF.splitlines()
                        if not line.startswith(("S3", "S4")))
-    env15 = vpnlink.decode_vpn_link(vpnlink.build_vpn_link(legacy))
-    assert env15["containers"][0]["awg"]["protocol_version"] == "1.5"   # I1/I4 remain
+    # H2 is a range in this fixture, and the client treats ranged headers as v2 as well
+    assert vpnlink.decode_vpn_link(
+        vpnlink.build_vpn_link(legacy))["containers"][0]["awg"]["protocol_version"] == "2"
 
-    plain = "\n".join(line for line in legacy.splitlines()
+    no_ranges = legacy.replace("H2 = 2345678-2345799", "H2 = 2345678")
+    assert vpnlink.decode_vpn_link(
+        vpnlink.build_vpn_link(no_ranges))["containers"][0]["awg"]["protocol_version"] == "1.5"
+
+    plain = "\n".join(line for line in no_ranges.splitlines()
                       if not line.startswith(("I1", "I4")))
     assert "protocol_version" not in vpnlink.decode_vpn_link(
         vpnlink.build_vpn_link(plain))["containers"][0]["awg"]
