@@ -137,3 +137,69 @@ def test_s3_s4_are_copied_to_the_client_config():
         "SaveConfig = false", "SaveConfig = false\nS3 = 43\nS4 = 2")
     params = dict(clientconf.server_obfuscation(text))
     assert params["S3"] == "43" and params["S4"] == "2"
+
+
+AWG31_CONF = """[Interface]
+PrivateKey = {priv}
+Address = 10.8.1.0/24
+ListenPort = 47328
+Jc = 4
+Jmin = 10
+Jmax = 50
+S1 = 12
+S2 = 12
+S3 = 12
+S4 = 12
+H1 = 1
+H2 = 2
+H3 = 3
+H4 = 4
+HeaderProtectionKey = J0GHEQVvL63s2KqUZfqE4KNfx8Gcx8bWEcm6HKaeB7Q=
+RekeyAfterTime = 100-120
+RekeyTimeout = 3-7
+RejectAfterTime = 150-180
+KeepaliveTimeout = 5-15
+MaxHandshakeAttempts = 15-20
+RandomTrailers = on
+DisableCookies = on
+
+[Peer]
+PublicKey = somepeer
+AllowedIPs = 10.8.1.1/32
+"""
+
+
+def test_awg31_transport_protection_params_are_copied():
+    params = clientconf.server_obfuscation(AWG31_CONF.format(priv="k"))
+    values = dict(params)
+    expected = {
+        "HeaderProtectionKey": "J0GHEQVvL63s2KqUZfqE4KNfx8Gcx8bWEcm6HKaeB7Q=",
+        "RekeyAfterTime": "100-120",
+        "RekeyTimeout": "3-7",
+        "RejectAfterTime": "150-180",
+        "KeepaliveTimeout": "5-15",
+        "MaxHandshakeAttempts": "15-20",
+        "RandomTrailers": "on",
+        "DisableCookies": "on",
+    }
+    for key, value in expected.items():
+        assert values[key] == value, key
+    # canonical order preserved: junk params first, transport protection after H4
+    keys = [k for k, _ in params]
+    assert keys == ["Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4",
+                    "H1", "H2", "H3", "H4", "HeaderProtectionKey",
+                    "RekeyAfterTime", "RekeyTimeout", "RejectAfterTime",
+                    "KeepaliveTimeout", "MaxHandshakeAttempts", "RandomTrailers",
+                    "DisableCookies"]
+
+
+def test_rendered_client_config_for_awg31_has_every_dp_param(cfg):
+    obf = clientconf.server_obfuscation(AWG31_CONF.format(priv="k"))
+    conf = clientconf.render_client_config(cfg, "PRIV", "PSK", "10.8.1.5", "SRV",
+                                           obfuscation=obf, mtu=1280)
+    for line in ["HeaderProtectionKey = J0GHEQVvL63s2KqUZfqE4KNfx8Gcx8bWEcm6HKaeB7Q=",
+                 "RekeyTimeout = 3-7", "RandomTrailers = on", "DisableCookies = on",
+                 "S3 = 12", "H1 = 1"]:
+        assert line in conf, line
+    # the peer section must not swallow interface params
+    assert conf.index("[Peer]") > conf.index("DisableCookies")

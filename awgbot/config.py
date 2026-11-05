@@ -8,6 +8,10 @@ import sys
 OBFUSCATION_KEYS = (
     "Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4",
     "H1", "H2", "H3", "H4",
+    # AWG 3.x transport protection — must also be copied verbatim
+    "HeaderProtectionKey", "ContentPaddingAddition",
+    "RekeyAfterTime", "RekeyTimeout", "RejectAfterTime", "KeepaliveTimeout",
+    "MaxHandshakeAttempts", "RandomTrailers", "DisableCookies",
     "I1", "I2", "I3", "I4", "I5", "J1", "J2", "J3", "Itime",
 )
 

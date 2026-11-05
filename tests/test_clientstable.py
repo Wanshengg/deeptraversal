@@ -90,3 +90,44 @@ def test_dumps_round_trips():
 def test_empty_table_gets_first_client():
     text = clientstable.upsert("", "K=", "laptop", "10.8.1.2")
     assert json.loads(text)[0]["clientId"] == "K="
+    # Amnezia 3.1 spells it allowed_ips; a brand new table follows that
+    assert json.loads(text)[0]["userData"]["allowed_ips"] == "10.8.1.2/32"
+
+
+AWG31_TABLE = """[
+    {
+        "clientId": "ADMINKEY=",
+        "userData": {
+            "allowed_ips": "10.8.1.1/32",
+            "clientName": "Admin [macOS 27.2]",
+            "creationDate": "Thu Nov 5 10:49:30 2026"
+        }
+    }
+]
+"""
+
+
+def test_upsert_follows_the_existing_allowed_ips_spelling():
+    text = clientstable.upsert(AWG31_TABLE, "NEW=", "iphone", "10.8.1.9")
+    entries = clientstable.parse(text)
+    new = clientstable.find(entries, "NEW=")
+    assert new["userData"]["allowed_ips"] == "10.8.1.9/32"
+    assert "allowedIps" not in new["userData"]
+    # the app's own entry is untouched, key spelling included
+    assert entries[0]["userData"]["allowed_ips"] == "10.8.1.1/32"
+
+
+def test_upsert_keeps_legacy_allowed_ips_camel_case_tables_consistent():
+    text = clientstable.upsert(AMNEZIA_TABLE, "NEW=", "iphone", "10.8.1.9")
+    new = clientstable.find(clientstable.parse(text), "NEW=")
+    assert new["userData"]["allowedIps"] == "10.8.1.9/32"
+    assert "allowed_ips" not in new["userData"]
+
+
+def test_updating_an_entry_that_has_both_spellings_keeps_them_equal():
+    both = json.dumps([{"clientId": "K=", "userData": {"allowedIps": "10.8.1.2/32",
+                                                       "allowed_ips": "10.8.1.2/32"}}])
+    entry = clientstable.find(clientstable.parse(
+        clientstable.upsert(both, "K=", "iphone", "10.8.1.5")), "K=")
+    assert entry["userData"]["allowedIps"] == "10.8.1.5/32"
+    assert entry["userData"]["allowed_ips"] == "10.8.1.5/32"

@@ -116,7 +116,7 @@ def test_issue_lists_peer_in_amnezia_client_table(prov, backend):
     assert backend.clients_in_app() == {peer.public_key}
     entry = backend._state["clients"][0]["userData"]
     assert entry["clientName"] == "iphone"
-    assert entry["allowedIps"] == "10.8.0.2/32"
+    assert entry["allowed_ips"] == "10.8.0.2/32"      # Amnezia 3.1 spelling
     assert "creationDate" in entry
 
 

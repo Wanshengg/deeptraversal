@@ -159,3 +159,27 @@ def test_awg2_server_gets_awg2_container():
 def test_container_name_can_be_overridden():
     env = vpnlink.decode_vpn_link(vpnlink.build_vpn_link(CONF, container="amnezia-awg"))
     assert env["containers"][0]["container"] == "amnezia-awg"
+
+
+AWG31_INI = CONF.replace("H4 = 4567890", """H4 = 4567890
+HeaderProtectionKey = J0GHEQVvL63s2KqUZfqE4KNfx8Gcx8bWEcm6HKaeB7Q=
+RekeyAfterTime = 100-120
+RekeyTimeout = 3-7
+RejectAfterTime = 150-180
+KeepaliveTimeout = 5-15
+MaxHandshakeAttempts = 15-20
+RandomTrailers = on
+DisableCookies = on""")
+
+
+def test_awg31_params_land_in_last_config():
+    last = vpnlink.decode_last_config(
+        vpnlink.decode_vpn_link(vpnlink.build_vpn_link(AWG31_INI)))
+    assert last["HeaderProtectionKey"] == "J0GHEQVvL63s2KqUZfqE4KNfx8Gcx8bWEcm6HKaeB7Q="
+    assert last["RekeyAfterTime"] == "100-120"
+    assert last["RekeyTimeout"] == "3-7"
+    assert last["RejectAfterTime"] == "150-180"
+    assert last["KeepaliveTimeout"] == "5-15"
+    assert last["MaxHandshakeAttempts"] == "15-20"
+    assert last["RandomTrailers"] == "on"
+    assert last["DisableCookies"] == "on"

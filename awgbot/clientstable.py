@@ -47,6 +47,22 @@ def find(entries, client_id):
     return None
 
 
+# Amnezia 3.1 writes "allowed_ips", older builds wrote "allowedIps". Follow whatever the
+# existing file uses so the app keeps parsing every entry the same way.
+IP_KEY_SNAKE = "allowed_ips"
+IP_KEY_CAMEL = "allowedIps"
+
+
+def ip_key_for(entries):
+    for entry in entries:
+        user = entry.get("userData") or {}
+        if IP_KEY_SNAKE in user:
+            return IP_KEY_SNAKE
+        if IP_KEY_CAMEL in user:
+            return IP_KEY_CAMEL
+    return IP_KEY_SNAKE
+
+
 def upsert(text, client_id, name, ip=None, ts=None):
     """Add or update one client, keeping every other entry untouched."""
     entries = parse(text)
@@ -58,7 +74,11 @@ def upsert(text, client_id, name, ip=None, ts=None):
     if name:
         user["clientName"] = name
     if ip:
-        user["allowedIps"] = ip if "/" in ip else "%s/32" % ip
+        value = ip if "/" in ip else "%s/32" % ip
+        key = ip_key_for(entries)
+        for existing in (IP_KEY_SNAKE, IP_KEY_CAMEL):
+            if existing == key or existing in user:
+                user[existing] = value
     user.setdefault("creationDate", creation_date(ts))
     return dumps(entries)
 

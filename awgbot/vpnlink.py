@@ -36,9 +36,14 @@ import zlib
 AWG_CONTAINER = "amnezia-awg"
 AWG2_CONTAINER = "amnezia-awg2"
 TRANSPORT_PROTO = "udp"
-# AWG params that must survive into last_config verbatim, UI order.
+# AWG params that must survive into last_config verbatim, in the order the server writes
+# them. JSON keys equal INI keys (see protocols_defs.h: junkPacketCount == "Jc", ...).
 OBF_KEYS = ("Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4",
             "H1", "H2", "H3", "H4",
+            # AWG 3.x transport protection
+            "HeaderProtectionKey", "ContentPaddingAddition",
+            "RekeyAfterTime", "RekeyTimeout", "RejectAfterTime", "KeepaliveTimeout",
+            "MaxHandshakeAttempts", "RandomTrailers", "DisableCookies",
             "I1", "I2", "I3", "I4", "I5", "J1", "J2", "J3", "Itime")
 
 
